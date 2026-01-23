@@ -10,8 +10,8 @@
   name: "BIOS deferred update failed -> set reset_to_defaults=factory (stage 1)"
   description: >
     If the ticket mentions "The deferred update of the system BIOS has failed.", run ILOM commands to
-    set BIOS reset_to_defaults to factory. Verify by show /System/BIOS, then start 60s timer.
-    If any step fails, send to repair to reseat CMOS + CPUs and include command output.
+    set BIOS reset_to_defaults to factory. If successful, wait 60 seconds (timer) before follow-up.
+    If any step fails, comment to send to repair to reseat CMOS + CPUs and include command output.
   priority: 30
   scope:
     arch: "EVE"
@@ -27,62 +27,44 @@
   action:
     type: comment_only
     close: false
-
-    # IMPORTANT:
-    # Do NOT leave this empty, otherwise RackBrain may skip commenting when template_override is not set.
-    comment_template: |
-      BIOS deferred update failure detected.
-      Attempting to set BIOS reset_to_defaults=factory via ILOM (stage 1) and verify.
-
-      Commands + output (BIOS verify):
-      {command_ilom_show_bios_after_set_stdout_code}
-
+    comment_template: ""
     command_steps:
       - id: ilom_set_bios_factory_defaults
         cmd: "{ilom} set /System/BIOS reset_to_defaults=factory"
         expect_status: 0
+        expect_contains: "Set 'reset_to_defaults' to 'factory'"
+        stop_on_decision: true
+        on_expect_fail_comment: |
+          Test, please send to repair.
 
-        # IMPORTANT:
-        # Keep going to the verify step. If you set stop_on_decision=true here, step2 will never run.
-        stop_on_decision: false
+          Repair,
+          Unable to set BIOS reset_to_defaults to factory after BIOS deferred update failure.
+          Please reseat CMOS and CPUs, then retry.
+
+          Commands + output:
+          {all_commands_code}
 
       - id: ilom_show_bios_after_set
         cmd: "{ilom} show /System/BIOS"
         expect_status: 0
         expect_contains: "reset_to_defaults = factory"
-
-        # This is the decision point. If verify fails -> comment + stop; if pass -> start timer.
         stop_on_decision: true
         timer_after_seconds: 60
-
-        on_expect_pass_comment: |
-          BIOS deferred update failure detected.
-
-          Successfully set BIOS reset_to_defaults=factory via ILOM (stage 1).
-          Starting 60s timer and will follow up to confirm reset_to_defaults returns to none(default).
-
-          BIOS verify output:
-          {command_ilom_show_bios_after_set_stdout_code}
-
         on_expect_fail_comment: |
           Test, please send to repair.
 
           Repair,
-          Unable to verify BIOS reset_to_defaults=factory after BIOS deferred update failure.
-          Please reseat CMOS and CPUs, then retry.
+          BIOS reset_to_defaults did not report as factory after setting it. Please reseat CMOS and CPUs, then retry.
 
-          BIOS output:
-          {command_ilom_show_bios_after_set_stdout_code}
-
-          Full Commands + output:
+          Commands + output:
           {all_commands_code}
 
 
 - id: bios_deferred_update_reset_defaults_stage2_pretest
   name: "BIOS deferred update failed -> follow up after 60s (PRETEST)"
   description: >
-    Follow-up after stage 1 timer expires. Re-check ILOM show /System/BIOS.
-    If reset_to_defaults becomes none, start PRETEST and comment. Otherwise send to repair.
+    Follow-up after stage 1 timer expires. Re-check ILOM show /System/. If reset_to_defaults becomes none,
+    start PRETEST and comment. Otherwise send to repair to reseat CMOS + CPUs.
   priority: 30
   scope:
     arch: "EVE"
@@ -106,48 +88,42 @@
     slt_operation: "PRETEST"
     slt_use_validate: true
 
-    # Fallback comment if command_steps cannot run / no template_override chosen
-    comment_template: |
-      BIOS deferred update follow-up (stage 2, PRETEST).
-      Re-checking BIOS reset_to_defaults via ILOM.
-
-      BIOS output:
-      {command_ilom_show_system_followup_stdout_code}
-
+    comment_template: ""
     command_steps:
       - id: ilom_show_system_followup
         cmd: "{ilom} show /System/BIOS"
         expect_status: 0
         expect_contains: "reset_to_defaults = none"
         stop_on_decision: true
-
         on_expect_pass_comment: |
-          Confirmed BIOS deferred-reset flag is cleared (reset_to_defaults = none).
-          Starting PRETEST to confirm.
+          Confirmed BIOS deferred-reset flag is cleared (reset_to_defaults = none). Starting PRETEST to confirm.
 
           PRETEST start (HTTP {slt_start_status}):
           {slt_start_response_code}
 
-          BIOS output:
-          {command_ilom_show_system_followup_stdout_code}
-
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
         on_expect_fail_comment: |
           Test, please send to repair.
 
           Repair,
-          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings.
-          Please reseat CMOS and CPUs.
+          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings. Please reseat CMOS and CPUs.
 
-          BIOS output:
-          {command_ilom_show_system_followup_stdout_code}
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
 
 
 - id: bios_deferred_update_reset_defaults_stage2_not_pretest
   name: "BIOS deferred update failed -> follow up after 60s (NOT PRETEST)"
   description: >
-    Follow-up after stage 1 timer expires. Re-check ILOM show /System/BIOS.
-    If reset_to_defaults becomes none, ask repair to release for rerun SLT/retest.
-    Otherwise send to repair to reseat CMOS + CPUs.
+    Follow-up after stage 1 timer expires. Re-check ILOM show /System/. If reset_to_defaults becomes none,
+    ask repair to release for rerun SLT/retest. Otherwise send to repair to reseat CMOS + CPUs.
   priority: 30
   scope:
     arch: "EVE"
@@ -166,37 +142,32 @@
   action:
     type: comment_only
     close: false
-
-    # Fallback comment if command_steps cannot run / no template_override chosen
-    comment_template: |
-      BIOS deferred update follow-up (stage 2, NOT PRETEST).
-      Re-checking BIOS reset_to_defaults via ILOM.
-
-      BIOS output:
-      {command_ilom_show_system_followup_stdout_code}
-
+    comment_template: ""
     command_steps:
       - id: ilom_show_system_followup
         cmd: "{ilom} show /System/BIOS"
         expect_status: 0
         expect_contains: "reset_to_defaults = none"
         stop_on_decision: true
-
         on_expect_pass_comment: |
           Confirmed BIOS deferred-reset flag is cleared (reset_to_defaults = none).
 
           Repair,
           Please release the server to rerun SLT / retest.
 
-          BIOS output:
-          {command_ilom_show_system_followup_stdout_code}
-
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
         on_expect_fail_comment: |
           Test, please send to repair.
 
           Repair,
-          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings.
-          Please reseat CMOS and CPUs.
+          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings. Please reseat CMOS and CPUs.
 
-          BIOS output:
-          {command_ilom_show_system_followup_stdout_code}
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
