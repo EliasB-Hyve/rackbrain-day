@@ -11,14 +11,23 @@ Goals:
 This file is designed to be:
 - Importable by RackBrain (library functions).
 - Runnable standalone for quick manual triage.
+
+2026-01 updates:
+- Prefer TestView UI API:
+    /api/v1/server_level_tests/view/get_test_log/{sn}/{slt_id}/{testset}/{testcase}
+  (stable and fast)
+- Fallback to /api/v1/download/... with log.txt first.
+- DO NOT force ?inline=true (UI does not always use it; can cause mismatches).
 """
 
 import os
+import sys
 from typing import Optional, List, Dict, Any, Tuple
 
 import pymysql
 import requests
 import urllib3
+from urllib.parse import quote
 
 
 # ========================= CONFIG =========================
@@ -33,7 +42,6 @@ BASE_URL = os.environ.get(
 # Recommended: export HYVE_TESTVIEW_COOKIE='request_id=...; access_token=...'
 COOKIE_ENV_VAR = "HYVE_TESTVIEW_COOKIE"
 COOKIE_FALLBACK = ""  # Keep empty; set HYVE_TESTVIEW_COOKIE in your shell.
-
 
 # hyvetest DB config
 DB_HOST = os.environ.get("RACKBRAIN_DB_HOST", os.environ.get("HYVETEST_DB_HOST", "")).strip()
@@ -104,21 +112,33 @@ def validate_and_start_slt(
         "start_text": None,
     }
 
-    # Optional validate_server
     if do_validate:
         v = sess.post(f"{base}/validate_server/{sn}?operation={operation}")
         result["validate_status"] = v.status_code
         result["validate_text"] = v.text
 
-    # start_test MUST have a JSON body ({}); otherwise TestView returns 422.
+    # start_test MUST have JSON body {}, otherwise 422 in some deployments
     s = sess.post(
         f"{base}/start_test/{sn}?operation={operation}",
         json={},
     )
     result["start_status"] = s.status_code
     result["start_text"] = s.text
-
     return result
+
+
+def _encode_path(p: str) -> str:
+    """URL-encode a path segment but keep slashes for full paths."""
+    return quote(str(p).lstrip("/"), safe="/")
+
+
+def build_download_url(filepath: str, base_url: str = BASE_URL) -> str:
+    """
+    Build TestView download URL using the same style as UI (no forced inline param).
+      /api/v1/download/<filepath>
+    """
+    fp = _encode_path(filepath)
+    return f"{base_url.rstrip('/')}/api/v1/download/{fp}"
 
 
 def build_log_url(
@@ -126,46 +146,14 @@ def build_log_url(
     slt_id: int,
     testset: str,
     testcase: str,
-    filename: str = "log.raw",
+    filename: str = "log.txt",
     base_url: str = BASE_URL,
 ) -> str:
     """
-    Build the TestView download URL for a given testcase log.
+    Build the TestView download URL for a given testcase log (direct form).
     """
-    return (
-        "{base}/api/v1/download/{sn}/{slt_id}/{testset}/{testcase}/{filename}?inline=true"
-        .format(
-            base=base_url.rstrip("/"),
-            sn=sn,
-            slt_id=slt_id,
-            testset=testset,
-            testcase=testcase,
-            filename=filename,
-        )
-    )
-
-
-def fetch_log_text(
-    sn: str,
-    slt_id: int,
-    testset: str,
-    testcase: str,
-    filename: str = "log.raw",
-    cookie_header: Optional[str] = None,
-    base_url: str = BASE_URL,
-) -> str:
-    """
-    Download a log from TestView and return it as text.
-
-    Errors:
-    - Raises requests.HTTPError if HTTP status is not 2xx.
-    - Raises other exceptions for network issues, cookie issues, etc.
-    """
-    sess = _make_testview_session(cookie_header=cookie_header)
-    url = build_log_url(sn, slt_id, testset, testcase, filename, base_url=base_url)
-    resp = sess.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.text
+    filepath = f"{sn}/{slt_id}/{testset}/{testcase}/{filename}"
+    return build_download_url(filepath, base_url=base_url)
 
 
 def _get_db_conn():
@@ -182,7 +170,7 @@ def _get_db_conn():
 
 
 def _parse_testcases(failed_testcase: Optional[str]) -> List[str]:
-    """Split '3_PROGRAM,...,5_CHECK_ROT_FRU' into ['3_PROGRAM', '5_CHECK_ROT_FRU']."""  # noqa: D401
+    """Split '3_PROGRAM,...,5_CHECK_ROT_FRU' into ['3_PROGRAM', '5_CHECK_ROT_FRU']."""  # noqa
     if not failed_testcase:
         return []
     return [tc.strip() for tc in failed_testcase.split(",") if tc.strip()]
@@ -225,74 +213,6 @@ def get_runs_for_sn(sn: str, limit: int = 20) -> List[Dict[str, Any]]:
     finally:
         conn.close()
     return rows
-
-
-def get_run_by_slt_id(sn: str, slt_id: int) -> Dict[str, Any]:
-    """
-    Fetch a specific ServerStatus run for a given SN + SLT ID.
-
-    Returns a dict with:
-      sn, slt_id, ss_ok, started, finished,
-      failed_testset, failed_testcase, failure_message,
-      associated_testset_guti, operation
-    """
-    if not sn:
-        raise RuntimeError("SN is required for get_run_by_slt_id.")
-    if slt_id is None:
-        raise RuntimeError("slt_id is required for get_run_by_slt_id.")
-
-    sql = """
-        SELECT
-          s.sn_tag AS sn,
-          ss.id    AS slt_id,
-          ss.ok    AS ss_ok,
-          ss.started,
-          ss.finished,
-          COALESCE(
-            JSON_UNQUOTE(ss.states->'$.jar_deliver."associatedTestSetName"'),
-            JSON_UNQUOTE(ss.states->'$.operation_records[0]."operation_name"'),
-            JSON_UNQUOTE(ss.states->'$.operation_records[0]."operation"')
-          ) AS failed_testset,
-          JSON_UNQUOTE(ss.states->'$.jar_deliver."testErrorCode"')
-            AS failed_testcase,
-          JSON_UNQUOTE(ss.states->'$.jar_deliver."failureMessage"')
-            AS failure_message,
-          JSON_UNQUOTE(ss.states->'$.jar_deliver."associatedTestSetGuti"')
-            AS associated_testset_guti,
-          COALESCE(
-            JSON_UNQUOTE(ss.states->'$.operation_records[0]."operation_name"'),
-            JSON_UNQUOTE(ss.states->'$.jar_deliver."associatedTestSetName"')
-          ) AS operation
-        FROM Server s
-        JOIN ServerStatus ss ON s.id = ss.server_id
-        WHERE s.sn_tag = %s AND ss.id = %s
-        LIMIT 1
-    """
-    conn = _get_db_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, (sn, slt_id))
-            row = cur.fetchone()
-    finally:
-        conn.close()
-
-    if not row:
-        raise RuntimeError(f"No ServerStatus row found for sn={sn} slt_id={slt_id}.")
-
-    testset_value = row.get("failed_testset") or row.get("operation")
-    if not (isinstance(testset_value, str) and testset_value.strip()):
-        raise RuntimeError(
-            f"Missing failed_testset/operation for sn={sn} slt_id={slt_id}."
-        )
-    row["failed_testset"] = testset_value
-
-    failed_testcase = row.get("failed_testcase")
-    if not (isinstance(failed_testcase, str) and failed_testcase.strip()):
-        raise RuntimeError(
-            f"Missing failed_testcase for sn={sn} slt_id={slt_id}."
-        )
-
-    return row
 
 
 def compute_same_failure_count(runs: List[Dict[str, Any]]) -> int:
@@ -350,7 +270,6 @@ def get_latest_failed_run(
         else None
     )
 
-    # Filter for failing runs and optional constraints
     for r in runs:
         if r["ss_ok"] != 0:
             continue
@@ -359,7 +278,6 @@ def get_latest_failed_run(
         if tc_norm and tc_norm not in (r.get("failed_testcase") or "").lower():
             continue
 
-        # This is our candidate latest failing run
         same_fail = compute_same_failure_count(runs)
         out = r.copy()
         out["same_failure_count"] = same_fail
@@ -370,13 +288,169 @@ def get_latest_failed_run(
     return None
 
 
+# ========================= LOG FETCH =========================
+
+def _name_variants(name: str) -> List[str]:
+    """
+    Return variants of a testset/testcase name that might be used in paths.
+    - Original
+    - If it starts with 'N_' numeric prefix, also add stripped version.
+    """
+    if not name:
+        return []
+    name = str(name).strip()
+    out = [name]
+
+    # strip numeric prefix like "1_CREATE_FIRMWARE_XML"
+    parts = name.split("_", 1)
+    if len(parts) == 2 and parts[0].isdigit():
+        stripped = parts[1].strip()
+        if stripped and stripped not in out:
+            out.append(stripped)
+
+    return out
+
+
+def fetch_log_text_via_view_api(
+    sn: str,
+    slt_id: int,
+    testset: str,
+    testcase: str,
+    cookie_header: Optional[str] = None,
+    base_url: str = BASE_URL,
+) -> Optional[str]:
+    """
+    Preferred: TestView UI API that returns JSON (fast, stable).
+    Seen in browser:
+      /api/v1/server_level_tests/view/get_test_log/{sn}/{slt_id}/{testset}/{testcase}
+    """
+    sess = _make_testview_session(cookie_header=cookie_header)
+    url = (
+        f"{base_url.rstrip('/')}/api/v1/server_level_tests/view/get_test_log/"
+        f"{_encode_path(sn)}/{_encode_path(str(slt_id))}/{_encode_path(testset)}/{_encode_path(testcase)}"
+    )
+    resp = sess.get(url, timeout=30)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+
+    # schema can vary; try common keys
+    try:
+        data = resp.json()
+    except Exception:
+        return resp.text
+
+    if isinstance(data, dict):
+        # sometimes: {"code":0,"msg":"OK","data":"..."} or {"data":{"log":"..."}}
+        for k in ("data", "log", "text", "content", "message"):
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+
+        inner = data.get("data")
+        if isinstance(inner, dict):
+            for k in ("log", "text", "content", "message", "raw"):
+                v = inner.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v
+
+    # fallback
+    return resp.text
+
+
+def fetch_log_text(
+    sn: str,
+    slt_id: int,
+    testset: str,
+    testcase: str,
+    filename: str = "log.txt",
+    cookie_header: Optional[str] = None,
+    base_url: str = BASE_URL,
+    testset_guti: Optional[str] = None,
+) -> str:
+    """
+    Download a log from TestView and return it as text.
+
+    Preferred:
+    - UI view API: /api/v1/server_level_tests/view/get_test_log/...
+
+    Fallback:
+    - /api/v1/download/<sn>/<slt_id>/<testset>/<testcase>/<filename>
+      Try filename variants with log.txt first.
+    """
+    # 1) Preferred: view API (matches UI behavior; avoids filepath guessing)
+    for ts in _name_variants(testset) or [testset]:
+        for tc in _name_variants(testcase) or [testcase]:
+            view_text = fetch_log_text_via_view_api(
+                sn=sn,
+                slt_id=slt_id,
+                testset=ts,
+                testcase=tc,
+                cookie_header=cookie_header,
+                base_url=base_url,
+            )
+            if view_text:
+                return view_text
+
+    # 2) Fallback: download URLs (no forced inline)
+    sess = _make_testview_session(cookie_header=cookie_header)
+
+    testset_vars = _name_variants(testset)
+    testcase_vars = _name_variants(testcase)
+
+    # Put log.txt first (UI uses it)
+    filenames = ["log.txt", "log.raw", "log", "log.raw.gz"]
+    if filename and filename not in filenames:
+        filenames.insert(0, filename)
+
+    tried: List[str] = []
+
+    for ts in testset_vars:
+        for tc in testcase_vars:
+            for fn in filenames:
+                url = build_log_url(
+                    sn=sn,
+                    slt_id=int(slt_id),
+                    testset=ts,
+                    testcase=tc,
+                    filename=fn,
+                    base_url=base_url,
+                )
+                tried.append(url)
+                resp = sess.get(url, timeout=30)
+                if resp.status_code == 200:
+                    return resp.text
+                if resp.status_code == 404:
+                    continue
+                resp.raise_for_status()
+
+    # keep guti fallback optional (rarely needed if view API works)
+    if testset_guti:
+        g = str(testset_guti).strip()
+        if g:
+            for tc in testcase_vars:
+                for fn in filenames:
+                    url = build_download_url(f"{sn}/{slt_id}/{g}/{tc}/{fn}", base_url=base_url)
+                    tried.append(url)
+                    resp = sess.get(url, timeout=30)
+                    if resp.status_code == 200:
+                        return resp.text
+                    if resp.status_code == 404:
+                        continue
+                    resp.raise_for_status()
+
+    sample = tried[:25]
+    more = len(tried) - len(sample)
+    msg = "TestView log not found. Tried URLs:\n- " + "\n- ".join(sample)
+    if more > 0:
+        msg += f"\n... ({more} more tried)"
+    raise RuntimeError(msg)
+
+
 # ========================= LOG SNIPPET HELPERS =========================
 
 def _find_ci(haystack: str, needle: str, start: int = 0) -> int:
-    """
-    Case-insensitive substring search.
-    Returns the index in the original string (or -1).
-    """
+    """Case-insensitive substring search; returns index or -1."""
     if haystack is None or needle is None:
         return -1
     try:
@@ -415,17 +489,14 @@ def select_log_segment(
     Extract a segment from log_text.
 
     Modes:
-    - If line_between_start_contains + line_between_end_contains:
-        return the substring between the two markers on the same line(s).
-    - Else if line_after_contains:
-        return N characters after the marker on the same line(s).
-    - If between_start_contains and between_end_contains are provided:
-        return the lines between the first line containing start and the first
-        line containing end after that.
-    - Else if line_contains is provided:
-        find first line containing it, and return that line plus N lines
-        before and M lines after.
-    - If nothing matches, return None.
+    - Inline extraction on a single line:
+        * between markers on same line: line_between_start_contains + line_between_end_contains
+        * N chars after marker: line_after_contains (+ line_after_chars)
+    - Between markers mode (line ranges):
+        * between_start_contains + between_end_contains
+          chooses the smallest segment by pairing each end marker with closest start marker before it.
+    - Single anchor line mode:
+        * line_contains (+ line_before / line_after)
     """
     lines = log_text.splitlines()
 
@@ -469,18 +540,15 @@ def select_log_segment(
 
         start_positions = [i for i, l in enumerate(lines) if start_tok in l.lower()]
         end_positions = [i for i, l in enumerate(lines) if end_tok in l.lower()]
-
         if not start_positions or not end_positions:
             return None
 
-        # Choose the smallest possible snippet by pairing an end marker with the closest start marker before it.
         best_pair = None  # (start_idx, end_idx, length)
-
         for e in end_positions:
             candidates = [s for s in start_positions if s < e]
             if not candidates:
                 continue
-            s = candidates[-1]
+            s = candidates[-1]  # closest start before end
             length = e - s
             if best_pair is None or length < best_pair[2]:
                 best_pair = (s, e, length)
@@ -490,7 +558,6 @@ def select_log_segment(
 
         start_idx, end_idx, _ = best_pair
         seg_lines = lines[start_idx:end_idx + 1]
-
         seg_lines = apply_line_filter(seg_lines, filter_line_contains)
         return "\n".join(seg_lines)
 
@@ -517,10 +584,10 @@ def get_log_segment_for_sn(
     base_url: str = BASE_URL,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
     """
-    Convenience helper for RackBrain:
+    Convenience helper:
 
-    1. Find the latest failing run for SN where failed_testcase contains
-       testcase_contains (and optional testset).
+    1. Find the latest failing run for SN where failed_testcase contains testcase_contains
+       (and optional testset).
     2. Fetch the corresponding TestView log for the matching testcase.
     3. Extract a segment using select_config (see select_log_segment).
 
@@ -535,20 +602,20 @@ def get_log_segment_for_sn(
     if not run:
         return None, None, None
 
-    # Choose a specific testcase; if multiple, prefer one containing testcase_contains
     testcases = run.get("testcases") or []
     chosen_tc = None
-    for tc in testcases:
-        if testcase_contains in tc:
-            chosen_tc = tc
-            break
+    if testcase_contains:
+        for tc in testcases:
+            if testcase_contains in tc:
+                chosen_tc = tc
+                break
     if not chosen_tc and testcases:
         chosen_tc = testcases[0]
-
     if not chosen_tc:
         return run, None, None
 
     run["chosen_testcase"] = chosen_tc
+
     log_text = fetch_log_text(
         sn=run["sn"],
         slt_id=int(run["slt_id"]),
@@ -556,6 +623,7 @@ def get_log_segment_for_sn(
         testcase=chosen_tc,
         base_url=base_url,
         cookie_header=cookie_header,
+        testset_guti=run.get("associated_testset_guti"),
     )
 
     snippet = select_log_segment(log_text, **select_config)
@@ -627,7 +695,6 @@ def _standalone_main() -> None:
     print(f"  Failed cases : {run['failed_testcase']}")
     print(f"  same_failcnt : {run['same_failure_count']}")
 
-    # Choose selection mode interactively
     print("\nLog selection mode:")
     print("  [1] Anchor + context (line_contains + before/after)")
     print("  [2] Between two markers (between_start_contains / between_end_contains)")
@@ -635,16 +702,10 @@ def _standalone_main() -> None:
 
     select_config: Dict[str, Any] = {}
     if mode == "2":
-        select_config["between_start_contains"] = input(
-            "Start marker substring: "
-        ).strip()
-        select_config["between_end_contains"] = input(
-            "End marker substring: "
-        ).strip()
+        select_config["between_start_contains"] = input("Start marker substring: ").strip()
+        select_config["between_end_contains"] = input("End marker substring: ").strip()
     else:
-        select_config["line_contains"] = input(
-            "Anchor substring (line_contains): "
-        ).strip()
+        select_config["line_contains"] = input("Anchor substring (line_contains): ").strip()
         try:
             select_config["line_before"] = int(input("Lines before (int, default 0): ") or "0")
             select_config["line_after"] = int(input("Lines after (int, default 0): ") or "0")
@@ -653,11 +714,15 @@ def _standalone_main() -> None:
             select_config["line_after"] = 0
 
     print("\nFetching log + snippet...")
-    run_info, log_text, snippet = get_log_segment_for_sn(
-        sn=sn,
-        testcase_contains=testcase_filter or "",
-        select_config=select_config,
-    )
+    try:
+        run_info, log_text, snippet = get_log_segment_for_sn(
+            sn=sn,
+            testcase_contains=testcase_filter or "",
+            select_config=select_config,
+        )
+    except Exception as e:
+        print("[ERROR]", e)
+        return
 
     if log_text is None:
         print("[ERROR] Could not fetch log (check cookie or connectivity).")
