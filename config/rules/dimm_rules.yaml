@@ -536,4 +536,55 @@
         stop_on_decision: false
         line_contains: "Affects"
         line_only: true
+        
+        
+- id: eve_dimm_training_failure_pretest_start_slt_and_close
+  name: "EVE DIMM training failure - PRETEST -> start SLT and close"
+  description: >
+    For PRETEST where PSP DIMM training failure is present, start SLT immediately for logs
+    and close the ticket.
+  priority: 35
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    # 保守一點：failure_message 或 open_problems 任一命中即可
+    combined_text:
+      contains: "fault.memory.amd.dimm.training.failure"
+  patterns:
+    - type: contains
+      value: "fault.memory.amd.dimm.training.failure"
+  action:
+    type: "comment_only"
+    close: true
+    start_slt: true
+    slt_operation: "SLT"
+    slt_use_validate: true
+
+    ilom_filter_contains:
+      - "fault.memory.amd.dimm.training.failure"
+      - "DIMM training failure"
+      - "The Platform Security Processor"
+
+    comment_template: |
+
+      DIMM training failure detected on PRETEST; starting SLT now to generate logs.
+
+      Test,
+      SLT has been started. No further PRETEST retry is needed for this failure.
+
+      Closing this ticket after SLT start.
+
+      Key fault:
+      - fault.memory.amd.dimm.training.failure
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+        
+        
 

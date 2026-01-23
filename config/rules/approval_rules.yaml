@@ -16,8 +16,6 @@
     When the latest Jira comment includes 'Requesting'
     and the commenter is on the approved list, post an acknowledgement comment.
   allow_high_slt_attempts: true
-  allow_on_same_failure: true
-
   # Make this higher than normal triage rules so it wins when present.
   priority: 100
 

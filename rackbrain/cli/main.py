@@ -34,18 +34,18 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True  # Python 3.6 style
 
-    # rackbrain process-ticket MFGS-440739
+    # rackbrain process-ticket MFGS-440739 --dry-run
     parser_process = subparsers.add_parser("process-ticket")
     parser_process.add_argument("issue_key")
     parser_process.add_argument("--apply", action="store_false", dest="dry_run",
-                                help="Apply changes (Jira writes) instead of dry run")
+                                help="Apply changes (post comment) instead of dry run")
     parser_process.add_argument("--skip-commands", action="store_true",
                                 help="Skip EVE command execution for faster dry-runs (only test templates)")
 
     # rackbrain poll --apply
     parser_poll = subparsers.add_parser("poll")
     parser_poll.add_argument("--apply", action="store_false", dest="dry_run",
-                            help="Apply changes (Jira writes) instead of dry run")
+                            help="Apply changes (post comment) instead of dry run")
     parser_poll.add_argument("--skip-commands", action="store_true",
                             help="Skip EVE command execution for faster processing")
     parser_poll.add_argument("--once", action="store_true",
@@ -60,7 +60,7 @@ def main() -> None:
     parser_metrics.add_argument("--date", type=str, default=None,
                                help="Date to analyze (YYYY-MM-DD, default: today)")
     parser_metrics.add_argument("--days", type=int, default=1,
-                               help="Reserved; currently ignored (default: 1)")
+                               help="Number of days to analyze (default: 1)")
     parser_metrics.add_argument("--format", choices=["text", "json"], default="text",
                                help="Output format (default: text)")
 

@@ -77,7 +77,6 @@ def _load_rule_from_dict(data: dict) -> Rule:
         assign_to=action_data.get("assign_to"),
         reassign_to=action_data.get("reassign_to"),
         transition_to=action_data.get("transition_to"),
-        transition_comment_mode=action_data.get("transition_comment_mode"),
         link_issue=link_issue,
         testview=action_data.get("testview"),
 

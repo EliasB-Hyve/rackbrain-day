@@ -106,12 +106,6 @@ class ErrorEvent:
     jira_latest_comment_author: Optional[str] = None
     jira_latest_comment_author_display_name: Optional[str] = None
     jira_latest_comment_author_email: Optional[str] = None
-    jira_test_engineer_comments_text: Optional[str] = None
-    jira_test_engineer_comment_authors: List[str] = field(default_factory=list)
-    jira_reporter: Optional[str] = None
-
-    # Optional: integration-generated content for rule templates
-    cinder_report: Optional[str] = None
 
     # Internal timers (local state, not Jira):
     # Rule ids whose timers have expired for this ticket under the current rearm_key.
@@ -217,7 +211,6 @@ class RuleAction:
     assign_to: Optional[str] = None
     reassign_to: Optional[str] = None
     transition_to: Optional[str] = None
-    transition_comment_mode: Optional[str] = None
     timer_after_seconds: Optional[int] = None
     # NEW: optional command sequence
     command_steps: Optional[List[RuleCommandStep]] = None

@@ -1,6 +1,7 @@
-# rackbrain/services/ticket_processor.py
-
-from typing import Dict, Any, Optional, List
+# -*- coding: utf-8 -*-
+import random
+import re
+from typing import Dict, Any, Optional, List, Tuple
 
 from rackbrain.adapters.jira_client import JiraClient
 from rackbrain.core.classification import classify_error
@@ -8,7 +9,6 @@ from rackbrain.core.context_builder import build_error_event, build_ticket
 from rackbrain.core.models import Rule
 from rackbrain.services.command_steps import execute_command_steps
 from rackbrain.services.comment_renderer import build_comment_body
-from rackbrain.services.jira_actions import apply_jira_actions
 from rackbrain.services.logger import get_logger, get_rule_match_history_logger
 from rackbrain.services.timer_store import TimerStore
 from rackbrain.services.testview_actions import (
@@ -16,30 +16,13 @@ from rackbrain.services.testview_actions import (
     populate_testview_log_for_action,
     select_testview_case_template,
 )
-from rackbrain.core.jira_extractors import extract_option_value
-from rackbrain.integrations.cinder_verification import (
-    build_cinder_verification_report,
-    CinderVerificationError,
-)
 
 MAX_SLT_ATTEMPTS = 7
 
 
-def _is_cinder_verification_ticket(issue: Dict[str, Any]) -> bool:
-    fields = issue.get("fields", {}) or {}
-    summary = str(fields.get("summary") or "").strip().lower()
-    want = "outpost refurb - cinder verification"
-    if want not in summary:
-        return False
-
-    location = extract_option_value(fields.get("customfield_15143"))  # Location
-    customer = extract_option_value(fields.get("customfield_15119"))  # Customer
-
-    location_ok = str(location or "").strip().lower() == "fremont"
-    customer_ok = "woody (outpost)" in str(customer or "").strip().lower()
-    return bool(location_ok and customer_ok)
-
-
+# ----------------------------
+# Helpers
+# ----------------------------
 def _safe_int(value, default=None):
     try:
         if value is None:
@@ -51,6 +34,242 @@ def _safe_int(value, default=None):
         return default
 
 
+def _find_transition_id(
+    transitions: List[Dict[str, Any]], target_name: str
+) -> Tuple[Optional[str], Optional[str]]:
+    want = (target_name or "").strip().lower()
+    for t in transitions or []:
+        name = (t.get("name") or "").strip()
+        if name.lower() == want:
+            return (t.get("id"), name)
+    return (None, None)
+
+
+def _try_transition_by_name(
+    jira: JiraClient,
+    issue_key: str,
+    target_name: str,
+    *,
+    comment_body: Optional[str] = None,
+    fields: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, str]:
+    """
+    Try to transition issue to target_name by looking up transitions list.
+    Returns (success, transition_name_or_reason).
+    """
+    transitions = jira.get_transitions(issue_key)
+    tid, tname = _find_transition_id(transitions, target_name)
+    if not tid:
+        return (False, f"NOT_FOUND: {target_name}")
+
+    # IMPORTANT:
+    # Use JiraClient.do_transition so we can include comment_body and/or fields
+    jira.do_transition(issue_key, tid, comment_body=comment_body, fields=fields)
+
+    return (True, tname or target_name)
+
+
+def _maybe_close_issue(
+    jira: JiraClient,
+    issue_key: str,
+    *,
+    transition_comment: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """
+    Try to close the ticket using an available transition.
+
+    IMPORTANT for this Jira instance:
+      - Do NOT attempt to set fields.resolution in transition payload.
+        (It fails with: "Field 'resolution' cannot be set...")
+
+    Returns (closed_ok, detail_msg)
+    """
+    transitions = jira.get_transitions(issue_key) or []
+    names = [((t or {}).get("name") or "").strip() for t in transitions]
+    names = [n for n in names if n]
+
+    print(f"[DEBUG] Available transitions for {issue_key}: {names}")
+
+    prefer_order = []
+    for n in ["Closed", "Close", "Resolve", "Resolved", "Done", "Complete", "Completed"]:
+        if any(x.lower() == n.lower() for x in names):
+            prefer_order.append(n)
+
+    if not prefer_order:
+        prefer_order = list(names)
+
+    errors: List[str] = []
+
+    if not (transition_comment or "").strip():
+        transition_comment = "RackBrain auto-close: SLT has been started; closing ticket."
+
+    # 1) Try preferred transitions WITH required comment
+    for name in prefer_order:
+        try:
+            ok, msg = _try_transition_by_name(
+                jira,
+                issue_key,
+                name,
+                comment_body=transition_comment,
+                fields=None,
+            )
+            if ok:
+                return True, f"closed_via:{msg}"
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+
+    # 2) Heuristic: try anything that looks like closing (still with comment)
+    for n in names:
+        nl = n.lower()
+        if any(k in nl for k in ["close", "closed", "resolve", "resolved", "done", "complete", "completed"]):
+            if any(x.lower() == n.lower() for x in prefer_order):
+                continue
+            try:
+                ok, msg = _try_transition_by_name(
+                    jira,
+                    issue_key,
+                    n,
+                    comment_body=transition_comment,
+                    fields=None,
+                )
+                if ok:
+                    return True, f"closed_via:{msg}"
+            except Exception as exc:
+                errors.append(f"{n}: {exc}")
+
+    if errors:
+        return False, "CLOSE_FAILED; errors=" + " | ".join(errors[:5])
+
+    return False, "NO_CLOSE_TRANSITION_FOUND_OR_FAILED"
+
+
+def _should_force_to_thaih(text: str) -> bool:
+    """
+    Trigger condition (case-insensitive):
+      - Any text indicates "repair release" / "release from repair" / "release and retest".
+    Examples that should match:
+      - "please release the server"
+      - "please release from repair and retest"
+      - "release from repair"
+      - "release ... repair"
+      - "release ... retest"
+    """
+    body = (text or "").strip()
+    if not body:
+        return False
+
+    norm = re.sub(r"\s+", " ", body).lower()
+
+    patterns = [
+        r"\bplease\s+release\s+the\s+server\b",
+        r"\brelease\s+from\s+repair\b",
+        r"\bplease\s+release\s+from\s+repair\b",
+        r"\brelease\b.*\brepair\b",
+        r"\brelease\b.*\bretest\b",
+    ]
+
+    return any(re.search(p, norm, flags=re.IGNORECASE) for p in patterns)
+
+
+_EMAIL_RE = re.compile(
+    r"(?P<email>[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})",
+    re.IGNORECASE,
+)
+
+
+def _extract_tester_email_from_description(description: str) -> Optional[str]:
+    """
+    Parse Jira Description and extract the email after a line like:
+
+      Tester Email: someone@hyvesolutions.com
+
+    More tolerant:
+      - "Tester Email :" (spaces)
+      - leading bullets "*", "-", ">" etc
+      - extra text after email
+      - mixed casing
+    """
+    text = (description or "")
+    if not text.strip():
+        return None
+
+    m = re.search(r"(?im)^[\s>*\-]*tester\s*email\s*:\s*(.+?)\s*$", text)
+
+    if not m:
+        return None
+
+    tail = (m.group(1) or "").strip()
+    if not tail:
+        return None
+
+    em = _EMAIL_RE.search(tail)
+    if not em:
+        return None
+
+    return em.group("email").strip().lower()
+
+
+def _normalize_email(e: str) -> str:
+    return (e or "").strip().lower()
+
+
+def _pick_final_assignee(
+    *,
+    combined_text_for_force: str,
+    ticket_description: str,
+    myself: str,
+    force_thaih: str,
+    random_assignees: List[str],
+) -> Tuple[str, str]:
+    """
+    Decide final assignee and return (assignee_email, reason).
+
+    Priority:
+      1) If combined text triggers forced repair-release -> force_thaih
+      2) Else, if Description contains "Tester Email:" and that email is in random_assignees -> assign back to it
+      3) Else random pick from random_assignees (excluding myself when possible)
+    """
+    if _should_force_to_thaih(combined_text_for_force):
+        return force_thaih, "forced_by_comment_release_server"
+
+    tester_email = _extract_tester_email_from_description(ticket_description)
+    if tester_email:
+        pool_norm = {_normalize_email(x): x for x in (random_assignees or [])}
+        hit = pool_norm.get(_normalize_email(tester_email))
+        if hit:
+            return hit, "matched_tester_email_in_description"
+
+    if not random_assignees:
+        return myself, "fallback_no_random_pool"
+
+    pool = [x for x in random_assignees if _normalize_email(x) != _normalize_email(myself)]
+    if pool:
+        return random.choice(pool), "random_pool_excluding_myself"
+    return random.choice(random_assignees), "random_pool_including_myself"
+
+
+def _build_comments_text_from_issue(issue: Dict[str, Any]) -> str:
+    """
+    Build a single searchable text blob from ALL comments currently present in issue fields.
+    (Jira may paginate/truncate; we at least include what we have + we already try to fetch latest.)
+    """
+    fields = (issue or {}).get("fields") or {}
+    comment_field = fields.get("comment") or {}
+    comments = []
+    if isinstance(comment_field, dict):
+        comments = comment_field.get("comments") or []
+
+    bodies: List[str] = []
+    for c in comments:
+        body = (c or {}).get("body") or ""
+        if body and str(body).strip():
+            bodies.append(str(body))
+    return "\n\n".join(bodies)
+
+
+# ----------------------------
+# Main
+# ----------------------------
 def process_ticket(
     jira: JiraClient,
     rules: List[Rule],
@@ -58,16 +277,18 @@ def process_ticket(
     dry_run: bool = True,
     skip_commands: bool = False,
     processing_config: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Dict[str, Any]:
     """
-    Fetch a Jira ticket, classify it with rules, and either:
-      - print the suggested comment (dry_run=True), or
-      - post the comment to Jira (dry_run=False, MVP still comments only).
-
-    For now we do NOT auto-close tickets. That will come later once you're
-    comfortable with the behavior.
+    Live action order (REAL MODE):
+      1) Assign to myself
+      2) Transition to "In Progress" (warn if not found)
+      3) Post comment (if non-empty)
+      4) If action.close == True: close ticket NOW and return (NO final assign)
+      5) Else final assign:
+           - if combined text indicates repair-release -> thaih@...
+           - else if Description has 'Tester Email:' matching an assignee in the random list -> assign back to that
+           - else random assign from list
     """
-    # 1. Fetch raw issue from Jira
     issue = jira.get_issue(
         issue_key,
         fields=[
@@ -75,7 +296,6 @@ def process_ticket(
             "description",
             "status",
             "assignee",
-            "reporter",
             "updated",
             "comment",
             "customfield_15119",  # Customer (EVE)
@@ -83,8 +303,7 @@ def process_ticket(
         ],
     )
 
-    # Jira may truncate comments in the issue payload; fetch the last comment
-    # when needed so rules can reliably check "latest comment" fields.
+    # Jira may truncate comments; fetch the last comment when needed
     try:
         comment_field = (issue.get("fields", {}) or {}).get("comment") or {}
         if isinstance(comment_field, dict):
@@ -115,15 +334,14 @@ def process_ticket(
     except Exception as exc:
         print(f"[WARN] Failed to fetch latest Jira comment for {issue_key}: {exc}")
 
-
     ticket = build_ticket(issue)
-    is_cinder_ticket = _is_cinder_verification_ticket(issue)
 
+    # required marker filter
     required_text = None
     if processing_config:
         required_text = processing_config.get("required_combined_text_contains")
 
-    if required_text and not is_cinder_ticket:
+    if required_text:
         combined_text = (ticket.summary or "") + "\n\n" + (ticket.description or "")
         if str(required_text).strip().lower() not in combined_text.lower():
             print(
@@ -156,16 +374,9 @@ def process_ticket(
             }
 
     error_event = build_error_event(ticket)
-
     same_fail = getattr(error_event, "db_same_failure_count", 0) or 0
-    # NOTE: We intentionally do NOT decide "same failure" skipping here,
-    # because allow_on_same_failure should only affect eligibility within the
-    # current ruleset (after timers/suppression), not globally across all rules.
 
-
-
-
-    # Get allowed statuses from config or use defaults
+    # allowed statuses
     if processing_config:
         allowed_statuses = tuple(processing_config.get("allowed_statuses", ["Open", "In Progress"]))
     else:
@@ -190,10 +401,15 @@ def process_ticket(
                 error=f"Status '{status_name}' not in allowed statuses",
                 dry_run=dry_run,
             )
-        return
+        return {
+            "issue_key": issue_key,
+            "match": False,
+            "actions_taken": {"action": "skipped_unprocessable_status", "status": status_name},
+            "dry_run": dry_run,
+            "edited": False,
+        }
 
-
-
+    # timers
     timer_store = TimerStore(processing_config)
     current_rearm_key = TimerStore.build_rearm_key(
         status_name, getattr(error_event, "jira_assignee", None)
@@ -232,24 +448,20 @@ def process_ticket(
             },
         }
 
-    # Expose expired timers (for workflow follow-ups) under the current rearm_key.
+    # expose expired timers
     try:
         error_event.timer_expired_for = timer_store.list_expired_rule_ids(issue_key, current_rearm_key)
     except Exception:
         error_event.timer_expired_for = []
 
     eligible_rules = [
-        r
-        for r in rules
+        r for r in rules
         if not timer_store.is_rule_suppressed(issue_key, r.id, current_rearm_key)
     ]
 
-    # If this ticket has repeated identical failures, only allow rules that explicitly opt in.
-    # This avoids one allow_on_same_failure rule affecting the entire ruleset.
+    # same failure gate
     if same_fail >= 2:
-        override_rules = [
-            r for r in eligible_rules if getattr(r, "allow_on_same_failure", False)
-        ]
+        override_rules = [r for r in eligible_rules if getattr(r, "allow_on_same_failure", False)]
         if not override_rules:
             print(
                 f"[INFO] Skipping {issue_key}: db_same_failure_count={same_fail} (no allow_on_same_failure rules)."
@@ -285,6 +497,7 @@ def process_ticket(
             f"restricting to {len(eligible_rules)} allow_on_same_failure rule(s)."
         )
 
+    # debug prints (keep yours)
     print("[DEBUG] testcase:", error_event.testcase)
     print("[DEBUG] failure_message:", error_event.failure_message)
     print("[DEBUG] failed_testset:", error_event.failed_testset)
@@ -294,11 +507,10 @@ def process_ticket(
     latest_comment_preview = (getattr(error_event, "jira_latest_comment_text", "") or "")[:200]
     print("[DEBUG] jira_latest_comment_text (preview):", latest_comment_preview)
 
+    # high slt attempts gate
     slt_attempts = _safe_int(getattr(error_event, "jira_slt_attempts", None))
     if slt_attempts is not None and slt_attempts > MAX_SLT_ATTEMPTS:
-        override_rules = [
-            r for r in eligible_rules if getattr(r, "allow_high_slt_attempts", False)
-        ]
+        override_rules = [r for r in eligible_rules if getattr(r, "allow_high_slt_attempts", False)]
         if not override_rules:
             print(f"[INFO] Skipping {issue_key}: jira_slt_attempts={slt_attempts} > {MAX_SLT_ATTEMPTS}")
             logger = get_logger()
@@ -334,17 +546,13 @@ def process_ticket(
             f"restricting to {len(eligible_rules)} override rule(s)."
         )
 
-
-
-    # 2. Classify based on combined text
+    # classify
     match = classify_error(error_event, eligible_rules, min_confidence=0.75)
-
     if not match:
         print("[INFO] No matching rule for %s." % issue_key)
         logger = get_logger()
         if logger:
             logger.log_no_match(issue_key=issue_key, dry_run=dry_run)
-        # Let poller know processing succeeded but no rule matched
         return {
             "issue_key": issue_key,
             "match": False,
@@ -365,104 +573,41 @@ def process_ticket(
     if history_logger:
         history_logger.log_match(rule_id=match.rule.id, issue_key=issue_key, dry_run=dry_run)
 
-    # NEW: if this rule has command_steps, run them via eve_command_runner.
-    # This will:
-    #   - run diagnostics on the EVE server (diag/ilom/hostnic/etc.)
-    #   - populate error_event.last_cmd_* for use in templates
-    #   - optionally provide an override comment template
     action = match.rule.action
 
-    # Cinder verification integration: build report used by the rule template.
-    # If report generation fails, do not touch the ticket.
-    if match.rule.id == "cinder_verification_close":
-        if not (error_event.sn or "").strip():
-            msg = "Missing SN for Cinder Verification ticket."
-            print(f"[WARN] {issue_key}: {msg}")
-            logger = get_logger()
-            if logger:
-                logger.log_processed(
-                    issue_key=issue_key,
-                    rule_id=match.rule.id,
-                    rule_name=match.rule.name,
-                    confidence=match.confidence,
-                    success=False,
-                    error=msg,
-                    dry_run=dry_run,
-                    actions_taken={"action": "cinder_report_failed", "reason": "missing_sn"},
-                )
-            return {
-                "issue_key": issue_key,
-                "match": True,
-                "rule_id": match.rule.id,
-                "rule_name": match.rule.name,
-                "confidence": match.confidence,
-                "edited": False,
-                "dry_run": dry_run,
-                "actions_taken": {"action": "cinder_report_failed", "reason": "missing_sn"},
-            }
-
-        try:
-            error_event.cinder_report = build_cinder_verification_report(error_event.sn)
-        except CinderVerificationError as exc:
-            msg = str(exc)
-            print(f"[WARN] {issue_key}: Cinder report build failed: {msg}")
-            logger = get_logger()
-            if logger:
-                logger.log_processed(
-                    issue_key=issue_key,
-                    rule_id=match.rule.id,
-                    rule_name=match.rule.name,
-                    confidence=match.confidence,
-                    success=False,
-                    error=msg,
-                    dry_run=dry_run,
-                    actions_taken={"action": "cinder_report_failed"},
-                )
-            return {
-                "issue_key": issue_key,
-                "match": True,
-                "rule_id": match.rule.id,
-                "rule_name": match.rule.name,
-                "confidence": match.confidence,
-                "edited": False,
-                "dry_run": dry_run,
-                "actions_taken": {"action": "cinder_report_failed"},
-            }
-
-    # 3. Run any configured EVE commands (diag/ilom/etc.)
+    # command steps
     template_override, step_timer_seconds = execute_command_steps(
         error_event, action, skip_commands=skip_commands
     )
-    
-    # 3b. Optionally start SLT from cmd101-sr1 via TestView API
 
+    # optional SLT start
     maybe_start_slt_for_action(error_event, action, dry_run=dry_run)
 
-
-    # 4. Optionally fetch a TestView log snippet for this rule
+    # optional TestView log snippet
     populate_testview_log_for_action(error_event, action)
 
-    # 4b. Optional: choose comment template based on TestView content (first match wins).
+    # optional template choose
     tv_template_override = select_testview_case_template(error_event, action)
     if tv_template_override is not None:
         template_override = tv_template_override
 
-    # 5. Build Jira comment body, allowing command_steps to override template
+    # build comment
     comment_body = build_comment_body(match, error_event, template_override)
 
     timer_seconds = step_timer_seconds
     if timer_seconds is None:
         timer_seconds = getattr(action, "timer_after_seconds", None)
 
-
-
+    # ----------------------------
+    # DRY RUN
+    # ----------------------------
     if dry_run:
         print("\n===== Suggested Jira comment (DRY RUN) =====\n")
         print(comment_body)
         if timer_seconds:
             print(f"\n[DRY RUN] timer_after_seconds: {int(timer_seconds)} (not persisted)")
         print("\n============================================\n")
-        # Log dry-run
+
         logger = get_logger()
         if logger:
             logger.log_processed(
@@ -475,7 +620,6 @@ def process_ticket(
                 actions_taken={"action": "dry_run", "comment_preview": "generated"},
             )
 
-        # Outcome for callers (poller); no real edits in dry-run
         return {
             "issue_key": issue_key,
             "match": True,
@@ -487,37 +631,153 @@ def process_ticket(
             "actions_taken": {"action": "dry_run"},
         }
 
+    # ----------------------------
+    # REAL MODE
+    # ----------------------------
+    RANDOM_ASSIGNEES = [
+        "loit@hyvesolutions.com",
+        "xiaox@hyvesolutions.com",
+        "IrdeepB@hyvesolutions.com",
+        "Mai.Tran@hyvesolutions.com",
+        "Annchanyavy.Watcha@hyvesolutions.com",
+        "octavio.lopez@hyvesolutions.com",
+        "Leo.Tung@hyvesolutions.com",
+        "Jocelyn.Flores@hyvesolutions.com",
+        "aye.myint@hyvesolutions.com",
+    ]
 
-        # Let callers know this was a dry-run (no edits made)
-        return {
-            "issue_key": issue_key,
-            "rule_id": match.rule.id,
-            "edited": False,
-            "dry_run": True,
-            "actions_taken": {"action": "dry_run", "comment_preview": "generated"},
-        }
+    MYSELF_ASSIGNEE = "austin.lin@hyvesolutions.com"
+    FORCE_REPAIR_RELEASE_ASSIGNEE = "thaih@hyvesolutions.com"
 
+    actions_taken: Dict[str, Any] = {}
 
-    # --- REAL MODE BELOW: assign -> transition -> comment -> reassign ---
-    # If a rule is using a timer with no comment (workflow staging), keep the ticket
-    # assigned to the current user so it will be eligible for the next poll cycle.
-    action_for_jira = action
-    if timer_seconds and isinstance(comment_body, str) and not comment_body.strip():
-        if getattr(action, "reassign_to", None) is None:
-            from copy import copy
+    # Build combined text for force-to-thaih detection (NOT just RackBrain comment)
+    comments_text = _build_comments_text_from_issue(issue)
+    combined_text_for_force = "\n\n".join([
+        ticket.summary or "",
+        ticket.description or "",
+        comments_text or "",
+        getattr(error_event, "jira_latest_comment_text", "") or "",
+        comment_body or "",
+    ])
 
-            action_for_jira = copy(action)
-            action_for_jira.reassign_to = ""
+    # Debug for tester email routing
+    tester_email_dbg = _extract_tester_email_from_description(ticket.description or "")
+    print(f"[DEBUG] tester_email_extracted: {tester_email_dbg}")
 
-    actions_taken = apply_jira_actions(
-        jira=jira,
-        issue_key=issue_key,
-        comment_body=comment_body,
-        processing_config=processing_config,
-        action=action_for_jira,
-        error_event=error_event,
-    )
+    # 1) Assign to myself FIRST
+    try:
+        jira.assign_issue(issue_key, MYSELF_ASSIGNEE)
+        print(f"[OK] Assigned {issue_key} to {MYSELF_ASSIGNEE}.")
+        actions_taken["assigned_to"] = MYSELF_ASSIGNEE
+    except Exception as exc:
+        print(f"[WARN] Failed to assign {issue_key} to {MYSELF_ASSIGNEE}: {exc}")
+        actions_taken["assigned_to"] = f"FAILED: {exc}"
 
+    # 2) Try transition to 'In Progress'
+    try:
+        ok, msg = _try_transition_by_name(jira, issue_key, "In Progress")
+        if ok:
+            print(f"[OK] Transitioned {issue_key} to {msg}.")
+            actions_taken["transitioned_to"] = msg
+        else:
+            print(f"[WARN] No 'In Progress' transition found for {issue_key}.")
+            actions_taken["transitioned_to"] = msg
+    except Exception as exc:
+        print(f"[WARN] Transition to 'In Progress' failed for {issue_key}: {exc}")
+        actions_taken["transitioned_to"] = f"FAILED: {exc}"
+
+    # 3) Post comment
+    try:
+        if isinstance(comment_body, str) and comment_body.strip():
+            jira.add_comment(issue_key, comment_body)
+            print(f"[OK] Comment posted to {issue_key}.")
+            actions_taken["commented"] = True
+        else:
+            print(f"[WARN] Empty comment body; skipped commenting on {issue_key}.")
+            actions_taken["commented"] = False
+    except Exception as exc:
+        print(f"[WARN] Failed to post comment to {issue_key}: {exc}")
+        actions_taken["commented"] = False
+        actions_taken["comment_error"] = str(exc)
+
+    # 3.5) If rule requests close, close NOW and STOP (no final assign)
+    want_close = bool(getattr(action, "close", False))
+    if want_close:
+        try:
+            closed_ok, detail = _maybe_close_issue(
+                jira,
+                issue_key,
+                transition_comment="RackBrain auto-close: SLT started per rule; closing ticket.",
+            )
+            actions_taken["closed"] = closed_ok
+            actions_taken["closed_detail"] = detail
+
+            if closed_ok:
+                print(f"[OK] Closed {issue_key}: {detail}")
+
+                logger = get_logger()
+                if logger:
+                    logger.log_processed(
+                        issue_key=issue_key,
+                        rule_id=match.rule.id,
+                        rule_name=match.rule.name,
+                        confidence=match.confidence,
+                        success=True,
+                        dry_run=False,
+                        actions_taken=actions_taken,
+                    )
+
+                return {
+                    "issue_key": issue_key,
+                    "match": True,
+                    "rule_id": match.rule.id,
+                    "rule_name": match.rule.name,
+                    "confidence": match.confidence,
+                    "edited": True,
+                    "dry_run": False,
+                    "actions_taken": actions_taken,
+                }
+            else:
+                print(f"[WARN] Close requested but failed for {issue_key}: {detail}")
+
+        except Exception as exc:
+            actions_taken["closed"] = False
+            actions_taken["closed_detail"] = f"FAILED: {exc}"
+            print(f"[WARN] Close requested but exception for {issue_key}: {exc}")
+
+        # If close requested but failed, continue to final assign
+
+    # 4) Final assign LAST (only if not closed)
+    try:
+        final_assignee, reason = _pick_final_assignee(
+            combined_text_for_force=combined_text_for_force,
+            ticket_description=(ticket.description or ""),
+            myself=MYSELF_ASSIGNEE,
+            force_thaih=FORCE_REPAIR_RELEASE_ASSIGNEE,
+            random_assignees=RANDOM_ASSIGNEES,
+        )
+
+        jira.assign_issue(issue_key, final_assignee)
+
+        if reason == "forced_by_comment_release_server":
+            print(f"[OK] Re-assigned {issue_key} to {final_assignee} (forced by repair-release text).")
+        elif reason == "matched_tester_email_in_description":
+            print(f"[OK] Re-assigned {issue_key} to {final_assignee} (matched 'Tester Email:' in Description).")
+        else:
+            print(f"[OK] Re-assigned {issue_key} to {final_assignee}.")
+
+        actions_taken["reassigned_to"] = final_assignee
+        actions_taken["reassigned_to_reason"] = reason
+
+        if tester_email_dbg:
+            actions_taken["tester_email_in_description"] = tester_email_dbg
+
+    except Exception as exc:
+        print(f"[WARN] Failed to re-assign {issue_key}: {exc}")
+        actions_taken["reassigned_to"] = f"FAILED: {exc}"
+
+    # timer
     if timer_seconds:
         effective_assignee = getattr(error_event, "jira_assignee", None)
         effective_status = status_name
@@ -546,7 +806,7 @@ def process_ticket(
         actions_taken["timer_started_seconds"] = int(timer_seconds)
         actions_taken["timer_remaining_seconds"] = int(rec.seconds_remaining())
 
-    # Log successful processing
+    # log
     logger = get_logger()
     if logger:
         logger.log_processed(
@@ -559,8 +819,7 @@ def process_ticket(
             actions_taken=actions_taken,
         )
 
-
-    # Tell callers whether this ticket was actually edited in Jira
+    # edited?
     commented_ok = actions_taken.get("commented") is True
     edited = bool(
         commented_ok

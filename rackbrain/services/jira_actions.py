@@ -11,7 +11,6 @@ def _build_action_context(error_event) -> Dict[str, str]:
     return {
         "ticket_key": getattr(ticket, "key", "") if ticket else "",
         "sn": getattr(error_event, "sn", "") or "",
-        "jira_reporter": getattr(error_event, "jira_reporter", "") or "",
         "jira_latest_comment_author": getattr(error_event, "jira_latest_comment_author", "") or "",
         "jira_latest_comment_author_display_name": getattr(
             error_event, "jira_latest_comment_author_display_name", ""
@@ -95,9 +94,6 @@ def apply_jira_actions(
 
     link_action = getattr(action, "link_issue", None) if action is not None else None
     link_failed = False
-    transition_comment_mode = (
-        getattr(action, "transition_comment_mode", None) if action is not None else None
-    )
     if link_action is not None:
         link_type = _resolve_action_value(getattr(link_action, "type", None), context) or ""
         link_target = _resolve_action_value(getattr(link_action, "target", None), context) or ""
@@ -117,7 +113,6 @@ def apply_jira_actions(
             actions_taken["assigned_to"] = f"FAILED: {exc}"
 
     # 2) Transition to target status (if configured)
-    commented_in_transition = False
     if transition_to:
         try:
             def _find_transition_id(transitions: List[Dict[str, Any]], target: str) -> Tuple[Optional[str], Optional[str]]:
@@ -132,15 +127,7 @@ def apply_jira_actions(
             transition_id, transition_name = _find_transition_id(transitions, transition_to)
 
             if transition_id:
-                if (
-                    transition_comment_mode == "during_transition"
-                    and isinstance(comment_body, str)
-                    and comment_body.strip()
-                ):
-                    jira.do_transition(issue_key, transition_id, comment_body=comment_body)
-                    commented_in_transition = True
-                else:
-                    jira.transition_issue(issue_key, transition_id)
+                jira.transition_issue(issue_key, transition_id)
                 print("[OK] Transitioned %s to %s." % (issue_key, transition_name))
                 actions_taken["transitioned_to"] = transition_name
             else:
@@ -155,15 +142,7 @@ def apply_jira_actions(
                         transitions = jira.get_transitions(issue_key)
                         transition_id, transition_name = _find_transition_id(transitions, transition_to)
                         if transition_id:
-                            if (
-                                transition_comment_mode == "during_transition"
-                                and isinstance(comment_body, str)
-                                and comment_body.strip()
-                            ):
-                                jira.do_transition(issue_key, transition_id, comment_body=comment_body)
-                                commented_in_transition = True
-                            else:
-                                jira.transition_issue(issue_key, transition_id)
+                            jira.transition_issue(issue_key, transition_id)
                             print("[OK] Transitioned %s to %s." % (issue_key, transition_name))
                             actions_taken["transitioned_to"] = f"{in_progress_name} -> {transition_name}"
                         else:
@@ -210,12 +189,7 @@ def apply_jira_actions(
 
     # 3) Post the RackBrain comment (skip empty body)
     # If linking failed, skip comment so the rule can retry next cycle.
-    if (
-        (not link_failed)
-        and (not commented_in_transition)
-        and isinstance(comment_body, str)
-        and comment_body.strip()
-    ):
+    if (not link_failed) and isinstance(comment_body, str) and comment_body.strip():
         try:
             jira.add_comment(issue_key, comment_body)
             print("[OK] Comment posted to %s." % issue_key)
@@ -224,7 +198,7 @@ def apply_jira_actions(
             print("[WARN] Failed to post comment to %s: %s" % (issue_key, exc))
             actions_taken["commented"] = f"FAILED: {exc}"
     else:
-        actions_taken["commented"] = bool(commented_in_transition)
+        actions_taken["commented"] = False
 
     # 4) Reassign to final user (if configured)
     # If linking failed, keep the ticket visible to the current user for retry/debug.

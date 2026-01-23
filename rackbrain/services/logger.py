@@ -184,12 +184,7 @@ class RuleMatchHistoryLogger:
     """
 
     _SECTION_RE = re.compile(r"^===\s*(?P<rule_id>.+?)\s*===\s*$")
-    _ENTRY_RE = re.compile(r"^(?P<day>\d{4}-\d{2}-\d{2})\s+(?P<issue>\S+)\s*$")
-    _HEADER_LINES = [
-        "# RackBrain rule match history",
-        "# Sections are grouped by rule_id; entries are 'YYYY-MM-DD TICKETKEY'.",
-        "",
-    ]
+    _ENTRY_RE = re.compile(r"^(?P<day>\\d{4}-\\d{2}-\\d{2})\\s+(?P<issue>\\S+)\\s*$")
 
     def __init__(
         self,
@@ -205,42 +200,9 @@ class RuleMatchHistoryLogger:
         self._lock = threading.Lock()
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        if self.enabled:
-            self._ensure_initialized_file()
 
     def _get_path(self) -> Path:
         return self.log_dir / self.history_file
-
-    def _ensure_initialized_file(self) -> None:
-        """
-        Ensure the history file exists and has a small human-readable header.
-
-        This makes it obvious where to look even before any rule matches occur.
-        """
-        path = self._get_path()
-        try:
-            with self._lock:
-                path.parent.mkdir(parents=True, exist_ok=True)
-
-                try:
-                    if path.exists() and path.stat().st_size > 0:
-                        return
-                except OSError:
-                    pass
-
-                with open(path, "a+", encoding="utf-8") as f:
-                    with _best_effort_file_lock(f):
-                        f.seek(0)
-                        existing = f.read()
-                        if isinstance(existing, str) and existing.strip():
-                            return
-
-                        out = "\n".join(self._HEADER_LINES).rstrip("\n") + "\n"
-                        f.seek(0)
-                        f.truncate(0)
-                        f.write(out)
-        except Exception as e:
-            print(f"[WARN] Failed to initialize rule match history log {path}: {e}")
 
     @staticmethod
     def _normalize_lines(text: str) -> List[str]:
@@ -275,7 +237,11 @@ class RuleMatchHistoryLogger:
 
                         # Ensure file has a small header if empty (human-readable only).
                         if not lines:
-                            lines = list(self._HEADER_LINES)
+                            lines = [
+                                "# RackBrain rule match history",
+                                "# Sections are grouped by rule_id; entries are 'YYYY-MM-DD TICKETKEY'.",
+                                "",
+                            ]
 
                         # Locate section and collect existing issue keys for that rule.
                         section_start = None

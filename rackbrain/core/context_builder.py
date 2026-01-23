@@ -106,14 +106,6 @@ def build_error_event(ticket: Ticket) -> ErrorEvent:
         or assignee_field.get("emailAddress")
         or assignee_field.get("displayName")
     )
-    reporter_field = fields.get("reporter") or {}
-    jira_reporter = (
-        reporter_field.get("name")
-        or reporter_field.get("key")
-        or reporter_field.get("accountId")
-        or reporter_field.get("emailAddress")
-        or reporter_field.get("displayName")
-    )
     status_field = fields.get("status") or {}
     jira_status = (status_field.get("name") or "").strip() or None
 
@@ -245,7 +237,6 @@ def build_error_event(ticket: Ticket) -> ErrorEvent:
         jira_latest_comment_author=jira_latest_comment_author,
         jira_latest_comment_author_display_name=jira_latest_comment_author_display_name,
         jira_latest_comment_author_email=jira_latest_comment_author_email,
-        jira_reporter=jira_reporter,
     )
 
     add_testview_context(error_event)

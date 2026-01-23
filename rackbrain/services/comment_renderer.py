@@ -427,9 +427,6 @@ def build_comment_body(rule_match, error_event, template_override: str = None) -
         "jira_latest_comment_author": getattr(error_event, "jira_latest_comment_author", "") or "",
         "jira_latest_comment_author_display_name": getattr(error_event, "jira_latest_comment_author_display_name", "") or "",
         "jira_latest_comment_author_email": getattr(error_event, "jira_latest_comment_author_email", "") or "",
-        "jira_reporter": getattr(error_event, "jira_reporter", "") or "",
-        "cinder_report": getattr(error_event, "cinder_report", "") or "",
-        "cinder_report_code": _to_jira_code_block(getattr(error_event, "cinder_report", "") or ""),
     }
 
     extracted = _apply_text_extracts(error_event, action)
@@ -478,8 +475,8 @@ def build_comment_body(rule_match, error_event, template_override: str = None) -
         )
 
     # Append a consistent "RackBrain" signature to every comment (once).
-    # Exceptions: some comments should be "pure payload" without any footer.
-    if getattr(rule, "id", None) in ("approval_request_ack", "cinder_verification_close"):
+    # Exception: approvals should look fully human-owned.
+    if getattr(rule, "id", None) == "approval_request_ack":
         return body
     signature = "🤖"
     stripped = (body or "").rstrip()
