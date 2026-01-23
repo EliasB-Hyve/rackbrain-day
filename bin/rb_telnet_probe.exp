@@ -1,0 +1,27 @@
+et timeout 10
+
+# Args: IP PORT
+set ip   [lindex $argv 0]
+set port [lindex $argv 1]
+
+spawn telnet $ip $port
+
+expect {
+    "Escape character is" {
+        send "\r"
+        exp_continue
+    }
+    -re "(login|Login|LOGIN)" {
+        puts "RB_LOGIN_SEEN"
+        exit 0
+    }
+    timeout {
+        puts "RB_TIMEOUT_NO_PROMPT"
+        exit 1
+    }
+    eof {
+        puts "RB_EOF_BEFORE_LOGIN"
+        exit 2
+    }
+}
+

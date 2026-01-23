@@ -1,0 +1,12 @@
+jql:
+  value: |
+    project = MFGS
+    AND text ~ "EVE BOT"
+    AND customer = EVE
+    AND Location = Fremont
+  max_results: 200
+output:
+  jsonl: audit_raw_export_output.jsonl
+testview:
+  enabled: true
+  inline_max_bytes: 204800

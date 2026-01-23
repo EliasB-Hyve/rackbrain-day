@@ -1,0 +1,539 @@
+# Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+# =====================================================================
+# DIMM / MEMORY RULES
+# =====================================================================
+# Use this file for all DIMM / memory-related rules.
+# Each rule uses the full template style so you remember available fields.
+# =====================================================================
+
+- id: ecc_corrected_mem_non_pretest
+  name: "ECC corrected memory fault â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show
+    fault.memory.amd.dram_ecc.corrected. In that case, run
+    "fmadm faulty -a" and show the lines containing "affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "fault.memory.amd.dram_ecc.corrected"
+    ilom_open_problems_raw:
+      contains: "fault.memory.amd.dram_ecc.corrected"
+  patterns:
+    - type: contains
+      value: "fault.memory.amd.dram_ecc.corrected"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "fault.memory.amd.dram_ecc.corrected"
+      - "fault.ops.memory.amd.dram_ecc.corrected"
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory fault.
+
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+#==========================================================================================================================================================
+- id: eve_psp_dimm_training_non_pretest
+  name: "EVE PSP DIMM training failure â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show PSP DIMM
+    training failure text (Platform Security Processor). In that case,
+    run "fmadm faulty -a" and show the lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "The Platform Security Processor"
+    ilom_open_problems_raw:
+      contains: "The Platform Security Processor"
+  patterns:
+    - type: contains
+      value: "DIMM training failure"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "DIMM training failure"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory fault (PSP DIMM training).
+
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+#==========================================================================================================================================================
+- id: fault_ops_memory_amd_dimm_ce_non_pretest
+  name: "fault.ops.memory.amd.dimm_ce â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show
+    fault.ops.memory.amd.dimm_ce. In that case, run "fmadm faulty -a"
+    and show the lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "fault.ops.memory.amd.dimm_ce"
+    ilom_open_problems_raw:
+      contains: "fault.ops.memory.amd.dimm_ce"
+  patterns:
+    - type: contains
+      value: "fault.ops.memory.amd.dimm_ce"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "fault.ops.memory.amd.dimm_ce"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory CE fault (fault.ops.memory.amd.dimm_ce).
+
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+#==========================================================================================================================================================
+- id: mrc_dimm_training_non_pretest
+  name: "MRC DIMM training failure â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show
+    'The Memory Reference Code (MRC) has detected a memory channel
+    training failure'. In that case, run "fmadm faulty -a" and show the
+    lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "The Memory Reference Code"
+    ilom_open_problems_raw:
+      contains: "The Memory Reference Code"
+  patterns:
+    - type: contains
+      value: "The Memory Reference Code"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "The Memory Reference Code"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory fault (MRC DIMM training failure).
+
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+#==========================================================================================================================================================
+- id: dram_ecc_deferred_non_pretest
+  name: "fault.memory.amd.dram_ecc.deferred â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show
+    fault.memory.amd.dram_ecc.deferred. In that case, run
+    "fmadm faulty -a" and show the lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "fault.memory.amd.dram_ecc.deferred"
+    ilom_open_problems_raw:
+      contains: "fault.memory.amd.dram_ecc.deferred"
+  patterns:
+    - type: contains
+      value: "fault.memory.amd.dram_ecc.deferred"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "fault.memory.amd.dram_ecc.deferred"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory fault (fault.memory.amd.dram_ecc.deferred).
+
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+
+- id: eve_abl_pretest_slt_ge2
+  name: "EVE ABL fatal â€“ PRETEST, SLT attempts = 2"
+  description: >
+    For EVE servers where the latest failing DB testset is PRETEST,
+    SLT Attempts are at least 2, and both the failure message and
+    ILOM Open_Problems show an Advanced Boot Loader (ABL) fatal error
+    (fault.cpu.amd.abl.fatal). In that case, instruct Test to run SLT
+    for logs and send the server to repair, summarizing ABL and DIMM
+    training faults.
+  priority: 20
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_slt_attempts:
+      regex: "^[2-9][0-9]*$"
+    combined_text:
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    failure_message:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    ilom_open_problems_raw:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+  patterns:
+    - type: contains
+      value: "fault.cpu.amd.abl.fatal"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "Advanced Boot Loader"
+      - "fault.cpu.amd.abl.fatal"
+    failure_message_line_contains: "fault.cpu.amd.abl.fatal"
+    failure_message_line_before: 1
+    failure_message_line_after: 1
+
+    start_slt: true
+    slt_operation: "SLT"
+    slt_use_validate: true
+
+    comment_template: |
+      
+      Advanced Boot Loader (ABL) fatal error on PRETEST persists; starting SLT now to generate logs for repair.
+
+      Test, once server fails SLT, please send to repair.
+       
+      Repair,
+
+      Server {sn} failed with an ABL fatal error (fault.cpu.amd.abl.fatal).
+
+      Failure message excerpt:
+      {failure_message_selected_code}
+
+      ILOM Open Problems:
+       {ilom_open_problems_code}
+
+
+
+
+
+- id: eve_abl_pretest_slt_first_attempt
+  name: "EVE ABL fatal â€“ PRETEST, SLT attempts = 1"
+  description: >
+    For EVE servers where the latest failing DB testset is PRETEST,
+    SLT Attempts are 1, and both the failure message and
+    ILOM Open_Problems show an Advanced Boot Loader (ABL) fatal error
+    (fault.cpu.amd.abl.fatal). In that case, instruct Test to run SLT
+    for logs and send the server to repair, summarizing ABL and DIMM
+    training faults.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_slt_attempts:
+      contains: "1"
+    combined_text:
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    failure_message:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    ilom_open_problems_raw:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+  patterns:
+    - type: contains
+      value: "fault.cpu.amd.abl.fatal"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "Advanced Boot Loader"
+      - "fault.cpu.amd.abl.fatal"
+    failure_message_line_contains: "fault.cpu.amd.abl.fatal"
+    failure_message_line_before: 0
+    failure_message_line_after: 1
+
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+    comment_template: |
+
+      This server has an Advanced Boot Loader (ABL) fatal error on PRETEST. 
+      
+      Cleared the ABL fault and starting PRETEST now to confirm whether this is a persistent failure.
+
+      
+      {command_cmd_1_stdout_code}
+
+      {command_cmd_3_stdout_code}
+
+    command_steps:
+      - id: "cmd_1"
+        cmd: "{ilom} show system/Open_Problems"
+        # expect_status: 0
+        # stop_on_decision: false
+        # line_contains: "Affects"
+        # line_only: false
+      
+      - id: "cmd_2"
+        cmd: "{faultmgmt} fmadm repair universe"
+        # expect_status: 0
+        # stop_on_decision: false
+        line_contains: "fmadm"
+        line_before: 1
+        line_after: 2
+
+      - id: "cmd_3"
+        cmd: "{ilom} show system/Open_Problems"
+        # expect_status: 0
+        # stop_on_decision: false
+        # line_contains: "Affects"
+        # line_only: false
+
+
+
+
+- id: eve_abl_pretest_slt_failure
+  name: "EVE ABL fatal â€“ SLT"
+  description: >
+    For EVE servers where the latest failing DB testset is SLT,
+    the server is being sent to repair, and the failure message has ABL
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    combined_text:
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    failure_message:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+    ilom_open_problems_raw:
+      contains: "Advanced Boot Loader"
+      regex: '(?is)^(?=.*(advanced boot loader|fault\.cpu\.amd\.abl\.fatal))(?!.*(fault\.(?!cpu\.amd\.abl\.fatal)|dimm training failure|the memory reference code|the platform security processor)).*$'
+  patterns:
+    - type: contains
+      value: "fault.cpu.amd.abl.fatal"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "Advanced Boot Loader"
+      - "fault.cpu.amd.abl.fatal"
+    failure_message_line_contains: "fault.cpu.amd.abl.fatal"
+    failure_message_line_before: 0
+    failure_message_line_after: 1
+    comment_template: |
+
+      This server has an Advanced Boot Loader (ABL) fatal error on SLT.
+      
+      Test, please send this server to repair
+
+      Repair,
+      
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+
+
+- id: fault_memory_arm_training_non_pretest
+  name: "fault.memory.arm.training â€“ non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and both the failure message and ILOM Open_Problems show
+    fault.memory.arm.training. In that case, run "fmadm faulty -a" and
+    show the lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "fault.memory.arm.training"
+    ilom_open_problems_raw:
+      contains: "fault.memory.arm.training"
+  patterns:
+    - type: contains
+      value: "fault.memory.arm.training"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "fault.memory.arm.training"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} failed for a memory training fault (fault.memory.arm.training).
+
+      Please reinstall DIMM(s). If the error remains, please swap with good DIMM(s)
+      to check if the error remains in the motherboard slot or follows the swap.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+

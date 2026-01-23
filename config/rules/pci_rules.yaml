@@ -1,0 +1,414 @@
+- id: ilom_pci_link_error_affects
+  name: "PCI link error â€“ capture fmadm Affects line"
+#Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+  description: >
+    For EVE servers where ILOM reports a PCI link error on a PCI card.
+    Run faultmgmt "fmadm faulty -a" and surface the Affects line for the
+    suspect FRU so repair can identify the impacted module.
+  priority: 20
+  allow_high_slt_attempts: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "A PCI link error has been detected on a PCI card."
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "A PCI link error has been detected on a PCI card."
+    comment_template: |
+
+      Test, please send this server to repair.
+      
+      Repair,
+
+      There is a PCI link error on a PCI card. Please reseat the module and its associated connections.
+
+      fmadm faulty -a details (Affects line):
+      {command_fmadm_faulty_pci_selected_lines_code}
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+    command_steps:
+      - id: "fmadm_faulty_pci"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        expect_contains: "Suspect 1 of 1"
+        line_contains: "Affects"
+        line_before: 0
+        line_after: 0
+        stop_on_decision: false
+
+
+- id: bifurcated_block_extract
+  name: "Bifurcation detected â€“ extract PCIE info block"
+  description: >
+    If the ticket contains 'is_bifurcated: bifurcated', extract that line and
+    the five lines before it from the failure message and include them in a
+    Jira comment.
+  priority: 15
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "is_bifurcated: bifurcated"
+  action:
+    type: "comment_only"
+    close: false
+    failure_message_line_contains: "is_bifurcated: bifurcated"
+    failure_message_line_before: 4
+    failure_message_line_after: 0
+    comment_template: |
+      Test, please send to repair. 
+      
+
+      Repair,
+      Please reseat PCI connections for the bifurcated component(s).
+
+      Check if issue is solved by running command in hostnic:
+      
+      
+        lspci -vvv -s [PCI_address]   | grep -i LnkSta
+
+
+      {failure_message_selected_code}
+
+
+- id: iou_bay_pcie_data_connector_missing_plain_english
+  name: "IOU bay PCIe data connector missing in system (plain English)"
+  description: >
+    When hwdiag_io_config reports an IOU Bay in system as MISSING, extract the *missing* IOU bay
+    (from the "in system: MISSING" line) and the expected (GI) slot, then state the issue in
+    plain English.
+  priority: 25
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "MISSING"
+    # Confirmation: require the same hwdiag block to be present in the ticket body too.
+    combined_text:
+      contains: "hwdiag_io_config -> IOU Bay"
+  patterns:
+    - type: contains
+      value: "MISSING"
+  action:
+    type: comment_only
+
+    text_extracts:
+      - name: iou_bay
+        source: failure_message
+        # Narrow to the hwdiag_io_config block for the bay that is MISSING in system.
+        # This avoids accidentally grabbing the first IOU Bay mentioned (e.g. a different bay
+        # with NO_PRESENT or other failures), and works whether "MISSING" is on the same line
+        # as the header or on the following line.
+        between_start_contains: "in GI:"
+        between_end_contains: "MISSING"
+        line_contains: "hwdiag_io_config -> IOU Bay"
+        line_between_start_contains: "IOU Bay "
+        line_between_end_contains: " in GI"
+        take: first
+        default: "?"
+
+      - name: gi_slot
+        source: failure_message
+        # Prefer the connector list closest to the MISSING result (some hwdiag blocks
+        # show only IOU Module type and omit the connector list).
+        between_start_contains: "PCIe Data Connectors on IOU Module"
+        between_end_contains: "MISSING"
+        line_contains: "PCIe Data Connectors on IOU Module: ['"
+        line_between_start_contains: "['"
+        line_between_end_contains: "'"
+        take: first
+        default: "?"
+
+    comment_template: |
+
+      Test, please send to repair.
+
+      Repair,
+
+      IOU{iou_bay} PCIe connection is missing in the system. Expected PCIe cable in slot {gi_slot} (correct location).
+
+      Please connect/seat the PCIe cable to slot {gi_slot} on IOU{iou_bay}.
+
+
+- id: iou_bay_pcie_data_cable_not_connected_plain_english
+  name: "IOU bay PCIe cable not connected in system (plain English)"
+  description: >
+    When hwdiag_io_cables shows a PCIe Data Cable expected in GI but "Not Connected" in system,
+    call out the IOU bay and missing cable connection number(s) in plain English.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    # Confirmation: require the same hwdiag block to be present in the ticket body too.
+    combined_text:
+      contains: "hwdiag_io_config -> IOU Bay"
+    failure_message:
+      contains: "IOU Module: Not Connected"
+  patterns:
+    - type: contains
+      value: "hwdiag_io_cables -> Cable#"
+    - type: contains
+      value: "IOU Bay: -, IOU Module: Not Connected"
+  action:
+    type: comment_only
+
+    text_extracts:
+      - name: iou_bay
+        source: failure_message
+        line_contains: "hwdiag_io_config -> IOU Bay"
+        line_between_start_contains: "IOU Bay "
+        line_between_end_contains: " in GI"
+        take: first
+        default: "?"
+
+      - name: missing_connections
+        source: failure_message
+        line_contains: "IOU Bay: -, IOU Module: Not Connected"
+        line_between_start_contains: "PCIe Data Cable#"
+        line_between_end_contains: ": IOU Bay"
+        take: all
+        default: "?"
+
+    comment_template: |
+
+      Test, please send to repair.
+
+      Repair,
+
+      IOU{iou_bay} is missing PCIe cable connection(s): {missing_connections}
+
+      Please reseat the PCIe cable(s) for the missing connection(s) on IOU{iou_bay}.
+
+
+- id: iou_bay_pcie_data_connector_mismatch_plain_english
+  name: "IOU bay PCIe data connector mismatch (plain English)"
+  description: >
+    When hwdiag_io_config shows IOU Bay connector mismatch between "in GI"
+    (correct/expected) and "in system" (actual/wrong), extract the bay and
+    connector numbers and state the mismatch in plain English.
+  priority: 35
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    # Confirmation: require the same hwdiag block to be present in the ticket body too.
+    combined_text:
+      contains: "hwdiag_io_config -> IOU Bay"
+    failure_message:
+      contains: "hwdiag_io_config -> IOU Bay"
+      not_contains: "MISSING"
+  patterns:
+    # Ensure this is truly a GI vs system mismatch for the same IOU bay
+    # (so we don't override the "Not Connected" rule unless config shows a mismatch).
+    - type: regex
+      value: 'hwdiag_io_config\s*->\s*IOU Bay\s*(\d+)\s*in GI:[\s\S]*?PCIe Data Connectors on IOU Module:\s*\[\s*''([0-9]{1,3})''[\s\S]*?hwdiag_io_config\s*->\s*IOU Bay\s*\1\s*in system:[\s\S]*?PCIe Data Connectors on IOU Module:\s*\[\s*''(?!\2'')([0-9]{1,3})'''
+  action:
+    type: comment_only
+
+    # Extract values using marker-based rules (no regex required).
+    text_extracts:
+      - name: iou_bay
+        source: failure_message
+        line_contains: "hwdiag_io_config -> IOU Bay"
+        line_between_start_contains: "IOU Bay "
+        line_between_end_contains: " in GI"
+        take: first
+        default: "?"
+
+      - name: gi_slot
+        source: failure_message
+        # Pick the first connector list line (GI comes before system in hwdiag_io_config)
+        line_contains: "PCIe Data Connectors on IOU Module: ['"
+        line_between_start_contains: "['"
+        line_between_end_contains: "'"
+        take: first
+        default: "?"
+
+      - name: system_slot
+        source: failure_message
+        # Pick the last connector list line (system comes after GI in hwdiag_io_config)
+        line_contains: "PCIe Data Connectors on IOU Module: ['"
+        line_between_start_contains: "['"
+        line_between_end_contains: "'"
+        take: last
+        default: "?"
+
+    comment_template: |
+
+      Test, please send to repair.
+      
+      Repair,
+
+
+      IOU{iou_bay} has PCIe cable plugged into slot {system_slot} instead of slot {gi_slot} (correct location).
+
+
+      Please verify this and move the PCIe cable to slot {gi_slot} for IOU{iou_bay}.
+
+
+- id: ilom_pci_data_link_layer_inactive_affects
+  name: "PCIe link layer inactive -> capture fmadm Affects line"
+  description: >
+    For EVE servers where ILOM reports a PCIe link-layer-inactive fault
+    (fault.io.pcie.data-link-layer-inactive). Run faultmgmt "fmadm faulty -a"
+    and surface the Affects line so repair can identify the impacted FRU/module.
+  priority: 20
+  allow_high_slt_attempts: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "PCIe link-layer-inactive (fault.io.pcie.data-link-layer-inactive)"
+  patterns:
+    - type: contains
+      value: "fault.io.pcie.data-link-layer-inactive"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "fault.io.pcie.data-link-layer-inactive"
+      - "PCIe link layer is inactive"
+    comment_template: |
+
+      Test, please send this server to repair.
+
+      Repair,
+
+      ILOM reports a PCIe link-layer-inactive fault:
+      `fault.io.pcie.data-link-layer-inactive`
+
+      Please reseat the affected module and its associated connections.
+
+      fmadm faulty -a details (Affects line):
+      {command_fmadm_faulty_pci_link_layer_inactive_selected_lines_code}
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+    command_steps:
+      - id: "fmadm_faulty_pci_link_layer_inactive"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        expect_contains: "Suspect"
+        line_contains: "Affects"
+        line_before: 0
+        line_after: 0
+        stop_on_decision: false
+
+
+
+
+# Untested rules
+# Move rules out of this file once validated.
+# Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+
+- id: pcie_lnksta_check_pretest_start_pretest_else_slt
+  name: "PCIe link speed/width mismatch -> hostnic LnkSta (PRETEST)"
+  description: >
+    For PRETEST: run hostnic LnkSta for each PCIe address listed in the ticket (GI lines).
+    If any output contains 'downgraded' OR any address has no output, send to repair and start SLT for logs.
+    Otherwise start PRETEST and comment.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Link speed/width for PCIE slot"
+    - type: contains
+      value: "Check Result: FAIL"
+    - type: contains
+      value: "12_CHECK_PCIE_LINK_SPEED_WIDTH"
+    - type: not_contains
+      value: "The number of Drive on the UUT is inconsistent with the number on SFCS"
+    - type: not_contains
+      value: "The number of drives read on the server is inconsistent with that in ilom, seems some Drive is not ready."
+  action:
+    type: comment_only
+
+    text_extracts:
+      - name: pcie_addresses
+        source: combined_text
+        line_contains: ":00.0 in GI:"
+        line_between_start_contains: "slot "
+        line_between_end_contains: " in GI:"
+        take: all
+        default: ""
+
+    command_steps:
+      - id: pcie_lnksta
+        for_each_extract: pcie_addresses
+        cmd: "{hostnic} echo '--- [item] ---' ; lspci -vvv -s [item] | grep -i LnkSta"
+        expect_status: 0
+        expect_contains: "LnkSta"
+        expect_not_contains: "downgraded"
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        start_testview_on_fail: true
+        testview_operation_on_fail: "SLT"
+        testview_use_validate_on_fail: true
+
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          Host NIC PCIe link is downgraded OR LnkSta output is missing for one/more devices.
+
+          Started SLT to generate logs for repair.
+
+          Addresses checked (00.0 only):
+          {pcie_addresses}
+
+          Commands + output:
+          {all_commands_code}
+
+    comment_template: |
+      PCIe LnkSta check looks OK on hostnic (no downgraded links and LnkSta output present for all addresses listed).
+
+      Test,
+      Started PRETEST.
+
+      Addresses checked (00.0 only):
+      {pcie_addresses}
+
+      Commands + output:
+      {all_commands_code}

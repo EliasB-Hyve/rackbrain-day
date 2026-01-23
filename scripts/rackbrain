@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# Portable wrapper to run RackBrain from anywhere.
+#
+# Expected usage:
+#   export RACKBRAIN_HOME=/path/to/rackbrain
+#   export RACKBRAIN_JIRA_PAT=...
+#   $RACKBRAIN_HOME/scripts/bootstrap.sh
+#   $RACKBRAIN_HOME/scripts/rackbrain poll --once
+#
+set -euo pipefail
+
+if [[ -z "${RACKBRAIN_HOME:-}" ]]; then
+  echo "ERROR: RACKBRAIN_HOME is not set (point it at the RackBrain folder)" >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "${RACKBRAIN_HOME}" && pwd)"
+cd "$ROOT_DIR"
+
+VENV_DIR="${VENV_DIR:-.venv}"
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+  exec "$VENV_DIR/bin/python" -m rackbrain --config "${RACKBRAIN_CONFIG:-$ROOT_DIR/config/config.yaml}" "$@"
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 -m rackbrain --config "${RACKBRAIN_CONFIG:-$ROOT_DIR/config/config.yaml}" "$@"
+fi
+
+echo "ERROR: No python found; run $ROOT_DIR/scripts/bootstrap.sh first." >&2
+exit 1
+

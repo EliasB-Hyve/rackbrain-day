@@ -1,0 +1,2 @@
+# RackBrain rule match history
+# Sections are grouped by rule_id; entries are 'YYYY-MM-DD TICKETKEY'.

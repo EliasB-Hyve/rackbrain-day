@@ -1,0 +1,229 @@
+- id: snbench_200g_speed_exit_minus1_stage1_pretest
+  name: "snbench 200G firmware speed Exit status (-1) -> rerun and branch (PRETEST)"
+  description: >
+    Ticket shows snbench 200G speed check exited with (-1). Rerun the command on HOSTNIC:
+    - If rerun shows Exit status (0): start PRETEST (no issue observed).
+    - If rerun still shows Exit status (-1): ask test to reseat 200G jumper cable and reassign back to Elias.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated."
+  patterns:
+    - type: contains
+      value: "Command: /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+    - type: contains
+      value: "Exit status (-1)"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: snbench_200g_speed_check_fail
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (-1)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated.
+
+          Output:
+          {command_snbench_200g_speed_check_fail_selected_lines_code}
+
+      - id: snbench_200g_speed_check_pass
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (0)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+        on_expect_pass_comment: |
+          I reran the command and it is not failing.
+
+          Output:
+          {command_snbench_200g_speed_check_pass_selected_lines_code}
+
+          Starting PRETEST to confirm (HTTP {slt_start_status}):
+          {slt_start_response_code}
+
+
+- id: snbench_200g_speed_exit_minus1_stage1_slt
+  name: "snbench 200G firmware speed Exit status (-1) -> rerun and branch (SLT)"
+  description: >
+    Same as stage1 PRETEST, but for SLT failures:
+    - If rerun shows Exit status (0): ask repair to release for testers to retest.
+    - If rerun still shows Exit status (-1): ask test to reseat 200G jumper cable and reassign back to Elias.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated."
+  patterns:
+    - type: contains
+      value: "Command: /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+    - type: contains
+      value: "Exit status (-1)"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: snbench_200g_speed_check_fail
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (-1)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated.
+
+          Output:
+          {command_snbench_200g_speed_check_fail_selected_lines_code}
+
+      - id: snbench_200g_speed_check_pass
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (0)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          I reran the command and it is not failing.
+
+          Output:
+          {command_snbench_200g_speed_check_pass_selected_lines_code}
+
+          Repair, please release the server for testers to retest.
+
+
+- id: snbench_200g_speed_exit_minus1_stage2_pretest
+  name: "snbench 200G jumper reseat follow-up -> rerun and branch (PRETEST)"
+  description: >
+    After the tester reseats the 200G jumper cable and reassigns the ticket back,
+    rerun the command:
+    - If Exit status (0): start PRETEST to confirm.
+    - If Exit status (-1): send to repair to reseat SmartNIC.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_assignee:
+      contains: "elias.bakhtani"
+    jira_comments_text:
+      contains: "Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated."
+  patterns:
+    - type: contains
+      value: "Command: /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: snbench_200g_speed_check_fail
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (-1)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Test, please send this server to repair.
+
+          Repair,
+          200G jumper reseat did not resolve the failure. Please reseat the SmartNIC and associated cabling.
+
+          Output:
+          {command_snbench_200g_speed_check_fail_selected_lines_code}
+
+      - id: snbench_200g_speed_check_pass
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (0)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+        on_expect_pass_comment: |
+          Reran the command after the 200G jumper reseat and it is not failing.
+
+          Output:
+          {command_snbench_200g_speed_check_pass_selected_lines_code}
+
+          Starting PRETEST to confirm (HTTP {slt_start_status}):
+          {slt_start_response_code}
+
+
+- id: snbench_200g_speed_exit_minus1_stage2_slt
+  name: "snbench 200G jumper reseat follow-up -> rerun and branch (SLT)"
+  description: >
+    Same as stage2 PRETEST, but for SLT failures:
+    - If Exit status (0): ask repair to release for testers to retest.
+    - If Exit status (-1): send to repair to reseat SmartNIC.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    jira_assignee:
+      contains: "elias.bakhtani"
+    jira_comments_text:
+      contains: "Please check and reseat the 200G jumper cable and reassign ticket back to me once reseated."
+  patterns:
+    - type: contains
+      value: "Command: /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: snbench_200g_speed_check_fail
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (-1)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Test, please send this server to repair.
+
+          Repair,
+          200G jumper reseat did not resolve the failure. Please reseat the SmartNIC and associated cabling.
+
+          Output:
+          {command_snbench_200g_speed_check_fail_selected_lines_code}
+
+      - id: snbench_200g_speed_check_pass
+        cmd: "{hostnic} /opt/snbench/snbench -L -m firmware -o speed -s 200G-200G -d 0"
+        expect_contains: "Exit status (0)"
+        line_contains: "Exit status ("
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Reran the command after the 200G jumper reseat and it is not failing.
+
+          Output:
+          {command_snbench_200g_speed_check_pass_selected_lines_code}
+
+          Repair, please release the server for testers to retest.

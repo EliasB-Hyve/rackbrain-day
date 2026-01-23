@@ -1,0 +1,1726 @@
+﻿
+  # Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+  # # ===================================================================
+  # # SCOPE - Hard filters on structured fields (ErrorEvent.*)
+  # # ===================================================================
+  # # All scope conditions must pass or the rule is ignored.
+  # scope:
+  #   # Exact string match (case-insensitive)
+  #   arch: "EVE"                                                                   # FAKE RULE, JUST MEANT AS DEMONSTRATION# FAKE RULE, JUST MEANT AS DEMONSTRATION# FAKE RULE, JUST MEANT AS DEMONSTRATION
+
+  #   # Location (custom Jira field)
+  #   jira_location:
+  #     contains: "Fremont"
+
+  #   # Customer (custom Jira field)
+  #   jira_customer:
+  #     contains: "EVE"
+
+  #   # ---- DB-driven SLT context --------------------------------------
+  #   # Latest *failing* testset from DB must NOT be "Pretest"
+  #   db_latest_failed_testset:
+  #     not_contains: "PRETEST"
+
+  #   # Latest failing testcase list / code (examples Ã¢â‚¬â€œ leave commented if not needed)
+  #   # db_failed_testcase:
+  #   #   contains: "12_CHECK_ILOM_FAULT"
+  #   # db_failed_testcase_list:
+  #   #   contains: "12_CHECK_ILOM_FAULT"
+
+  #   # How many times the same failure has occurred (from DB)
+  #   # db_same_failure_count: 1
+  #                                                                                             # FAKE RULE, JUST MEANT AS DEMONSTRATION# FAKE RULE, JUST MEANT AS DEMONSTRATION# FAKE RULE, JUST MEANT AS DEMONSTRATION
+  #   # ---- Failure message (DB / Jira merged) -------------------------
+  #   # Require the ECC corrected fault string in the failure message
+  #   failure_message:
+  #     contains: "fault.memory.amd.dram_ecc.corrected"
+
+  #   # ---- ILOM Open Problems -----------------------------------------
+  #   # Use the raw ILOM "show System/Open_Problems" captured by context_builder
+  #   ilom_open_problems_raw:
+  #     contains: "fault.memory.amd.dram_ecc.corrected"
+
+  #   # ---- Other optional filters you can use in future rules ----------
+  #   # testcase:
+  #   #   contains: "12_CHECK_ILOM_FAULT"
+  #   #
+  #   # failed_testset:
+  #   #   - "12_CHECK_ILOM_FAULT"
+  #   #
+  #   # jira_slt_attempts:
+  #   #   regex: "\\b[2-9][0-9]*\\b"  # SLT Attempts >= 2, example regex
+  #   #
+  #   # model:
+  #   #   contains: "E6-2C"
+  #   #
+  #   # jira_tester_email:
+  #   #   contains: "@hyvesolutions.com"
+
+  # # ===================================================================
+  # # PATTERNS - Text match on Jira summary + description
+  # # ===================================================================
+  # # Used to score rules. Highest confidence rule wins.
+  # patterns:
+  #   # Ticket text mentions the problem class
+  #   - type: contains
+  #     value: "fault.memory.amd.dram_ecc.corrected"                                    
+
+  #   # Ticket text also mentions fmadm faulty -a (optional but good signal)
+  #   - type: contains
+  #     value: "fmadm faulty -a"
+
+  #   # Example regex pattern (kept as reminder)
+  #   # - type: regex
+  #   #   value: "SLT Attempts:\\s*([2-9][0-9]*)"
+
+  # # ===================================================================
+  # # ACTION - What RackBrain does after match
+  # # ===================================================================
+  # action:
+  #   # Only "comment_only" implemented today
+  #   type: "comment_only"
+  #   close: false  # reserved for future auto-close behavior
+
+  #   # =================================================================
+  #   # ILOM COMPONENT FILTERING (optional)
+  #   # =================================================================
+  #   # These control {ilom_components} if you want to reference components.
+  #   ilom_filter_contains:
+  #     - "fault.memory.amd.dram_ecc.corrected"
+  #     - "fault.ops.memory.amd.dram_ecc.corrected"
+
+  #   # =================================================================
+  #   # FAILURE MESSAGE SELECTION (optional)
+  #   # =================================================================
+  #   # Example: slice DB failure_message if you want a clean snippet.
+  #   # For this rule we just leave them as examples.
+  #   # failure_message_between_start_contains: "Problem class"
+  #   # failure_message_between_end_contains: "GUTI:"
+  #   #
+  #   # failure_message_line_contains: "fault.memory.amd.dram_ecc.corrected"
+  #   # failure_message_line_before: 0
+  #   # failure_message_line_after: 5
+
+  #   # =================================================================
+  #   # TESTVIEW LOG SELECTION (optional)
+  #   # =================================================================
+  #   # Left as a reminder; not needed for this rule.
+  #   # testview_testcase_contains: "12_CHECK_ILOM_FAULT"
+  #   # testview_testset: "PRETEST"
+  #   # testview_between_start_contains: "Faults found in output of command"
+  #   # testview_between_end_contains: "End of Test"
+
+  #   # =================================================================
+  #   # COMMENT TEMPLATE# FAKE RULE, JUST MEANT AS DEMONSTRATION# 
+  #   # =================================================================
+  #   comment_template: |
+  #     [rackbrain] ECC corrected memory fault detected on {sn}.
+
+  #     Rule: {rule_id} Ã¢â‚¬â€œ {rule_name}
+  #     Confidence: {confidence}
+      
+
+
+  #     Jira Location: {jira_location}
+  #     Jira Customer: {jira_customer}
+  #     Architecture: {arch}
+  #     Model: {jira_model}
+  #     Customer IPN: {jira_customer_ipn}
+  #     SLT Rack SN: {jira_slt_rack_sn}
+
+  #     Latest failing SLT run (from DB):
+  #     - SLT ID: {db_latest_slt_id}
+  #     - Testset (DB): {db_latest_failed_testset}
+  #     - Testcase(s) (DB): {db_failed_testcase_list}
+  #     - Same failure count (DB): {db_same_failure_count}
+
+  #     Failure message (DB/Jira):
+  #     {failure_message_selected_code}
+
+  #     ILOM Open Problems (memory-related):
+  #     {ilom_open_problems_code}
+
+  #     Solaris fault summary from "fmadm faulty -a"
+  #     (only lines containing "affects"):
+  #     {command_fmadm_faulty_selected_lines_code}
+
+  #     This shows which DIMM/CPU the ECC-corrected fault currently affects.
+  #     Use this to decide whether to move the server to repair for DIMM
+  #     replacement or continue to monitor/retest.
+
+  #     Commands summary:
+  #     {commands_summary}
+
+
+  #       stop_on_decision: false  # we still want the main comment_template
+
+
+  #     You can add more commands here in future rules, e.g.:
+  #     - id: "ilom_check"
+  #       cmd: "{ilom} show /SP/faultmgmt"                                  
+  #       line_contains: "fault.memory.amd.dram_ecc.corrected"
+  #       line_before: 0
+  #       line_after: 5
+
+#actual error rule start : 
+
+- id: vts_secure_boot_aer_corrected_non_pretest
+  name: "VTS Secure Boot Ã¢â‚¬â€œ AER corrected error in TEST_ENV_CHECK"
+  description: >
+    For EVE servers where the latest failing DB testset is TEST_ENV_CHECK
+    (not Pretest), failing testcase is 2_SETUP_VTS_ENV, the ticket
+    mentions 'VTS will not run if "Secure Boot" is enabled in BIOS',
+    and the TestView log for that testcase contains 'AER: Corrected error
+    received'. In that case, surface the AER line plus three lines after
+    from the log to aid debug.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset: "TEST_ENV_CHECK"
+    db_failed_testcase:
+      contains: "2_SETUP_VTS_ENV"
+  patterns:
+    - type: contains
+      value: 'VTS will not run if "Secure Boot" is enabled in BIOS'
+  action:
+    type: "comment_only"
+    close: false
+    # Pull from TestView: TEST_ENV_CHECK Ã¢â€ â€™ 2_SETUP_VTS_ENV
+    testview_testset: "TEST_ENV_CHECK"
+    testview_testcase_contains: "2_SETUP_VTS_ENV"
+    # Select the AER corrected error line + 3 lines after
+    testview_line_contains: "AER: Corrected error received"
+    testview_line_before: 0
+    testview_line_after: 3
+    comment_template: |
+
+      Test, please send this server to repair.
+      
+
+      Repair,
+
+      Server {sn} failed with error "VTS will not run if "Secure Boot" is enabled in BIOS".
+      
+      The TestView log shows a corrected PCIe AER event during pxe boot.
+
+      Please reseat hostnic and associated connections
+
+      {testview_log_snippet_code}
+
+
+
+
+
+- id: fim_module_missing
+  name: "FIM module missing or not connected"
+  description: >
+    For EVE servers where ticket or ILOM Open_Problems reports:
+    'The FIM Module is missing or not properly connected'. Not applicable during PRETEST.
+    Generate a comment requesting repair to inspect or reseat the FIM module.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    ilom_open_problems_raw:
+      contains: "The FIM Module is missing or not properly connected"
+  patterns:
+    - type: contains
+      value: "The FIM Module is missing or not properly connected"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "The FIM Module is missing or not properly connected"
+    comment_template: |
+      Test, please send this server to repair.
+      
+      Repair,
+
+      The FIM cable is missing or not properly connected. Please reseat ROT and verify proper cabling.
+      
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+
+
+- id: hwdiag_system_info_failed_after_sp_reset
+  name: "hwdiag system info failed Ã¢â‚¬â€œ power cabling issue capture"
+  description: >
+    For EVE servers where SLT reports 'hwdiag system info executed failed after SP reset'.
+    Run 'hwdiag io cables' and capture the lines indicating potential power cabling issues
+    so repair can identify improper or missing cabling.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "hwdiag system info executed failed after SP reset"
+  action:
+    type: "comment_only"
+    close: false
+    comment_template: |
+      Test, please send this server to repair.
+      
+
+      Repair,
+
+      hwdiag system info failed after SP reset. Check for power cabling issues between motherboard involved modules.
+
+      Below is the extracted output from 'hwdiag io cables' showing lines associated with potential power cabling issues:
+
+      {command_hwdiag_cables_selected_lines_code}
+    command_steps:
+      - id: "hwdiag_cables"
+        cmd: "{diag} hwdiag io cables"
+        expect_status: 0
+        line_contains: "Potential power cabling issue"
+        line_before: 1
+        line_after: 0
+        stop_on_decision: false
+
+
+#for some reason if the power cabling issue happens in testcase Failed Testcase: 4_CHECK_ILOM_FAULT, there is no error in the diagnostic commands and we have to send the server to repair without direction
+
+
+- id: hwdiag_system_info_failed_after_sp_reset
+  name: "hwdiag system info failed Ã¢â‚¬â€œ power cabling issue capture"
+  description: >
+    For EVE servers where SLT reports 'hwdiag system info executed failed after SP reset'.
+    Run 'hwdiag io cables' and capture the lines indicating potential power cabling issues
+    so repair can identify improper or missing cabling.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "hwdiag system info executed failed after SP reset"
+  action:
+    # start_slt: true           # triggers validate_and_start_slt()
+    # slt_operation: "SLT"      # default, but explicit is nice
+    # slt_use_validate: true    # run validate_server then start_test
+    type: "comment_only"
+
+    command_steps:
+      - id: "hwdiag_cables"
+        cmd: "{diag} hwdiag io cables"
+        expect_contains: "Potential power cabling issue"
+        line_contains: "Potential power cabling issue"
+        line_before: 1
+        line_after: 0
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "SLT"
+        testview_use_validate_on_pass: true
+
+        on_expect_pass_comment: |
+
+          Running SLT to generate logs for repair.
+  
+
+          Repair,
+
+          hwdiag system info failed after SP reset. Check for power cabling issues between motherboard involved modules.
+
+          Below is the extracted output from 'hwdiag io cables' showing lines associated with potential power cabling issues:
+
+          {command_hwdiag_cables_selected_lines_code}
+
+
+- id: hostnic_fw_plm_download_pretest
+  name: "HOSTNIC_FW PLM download failure Ã¢â‚¬â€œ PRETEST rerun"
+  description: >
+    If the ticket contains 'Failed to download HOSTNIC_FW customer document from PLM'
+    and the latest failing testset is PRETEST, start PRETEST and comment.
+  priority: 10
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "Starting PRETEST to reattempt PLM install (HOSTNIC_FW)."
+  patterns:
+    - type: contains
+      value: "Failed to download HOSTNIC_FW customer document from PLM"
+  action:
+    type: "comment_only"
+    close: false
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+    comment_template: |
+      Starting PRETEST to reattempt PLM install (HOSTNIC_FW).
+
+      PRETEST start (HTTP {slt_start_status}):
+
+
+
+- id: snbench_tool_plm_download_pretest
+  name: "snbench tool PLM download failure Ã¢â‚¬â€œ PRETEST rerun"
+  description: >
+    If the ticket contains 'Failed to install snbench tool from PLM'
+    and the latest failing testset is PRETEST, start PRETEST and comment.
+  priority: 10
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "Starting PRETEST to reattempt PLM install (snbench tool)."
+  patterns:
+    - type: contains
+      value: "Failed to install snbench tool from PLM"
+  action:
+    type: "comment_only"
+    close: false
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+    comment_template: |
+      Starting PRETEST to reattempt PLM install (snbench tool).
+
+      PRETEST start (HTTP {slt_start_status}):      
+
+
+
+
+
+
+
+- id: rot_mac_failure
+  name: "ROT MAC failure Ã¢â‚¬â€œ request repair"
+  description: >
+    If Failed Testcase is 1_CHECK_ROT_MAC and Failure Message contains 'ROT MAC'
+    and the testset is not PRETEST, leave a comment directing Test to send
+    the server to repair for ROT MAC investigation.
+  priority: 15
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    db_failed_testcase:
+      contains: "1_CHECK_ROT_MAC"
+    failure_message:
+      contains: "ROT MAC"
+  patterns:
+    - type: contains
+      value: "ROT MAC"
+  action:
+    type: "comment_only"
+    close: false
+    comment_template: |
+      Test, please send this server to repair.
+
+      REPAIR:
+
+      Please inspect and reseat the ROT/FIM cables and remember to check the ROT/FIM ports on both the MB and ROT board sides for any potentially bent pins as well.
+
+      Failure Message: 'ROT MAC'
+      Thanks,
+
+
+
+- id: snbench_probe_failed_rerunF
+  name: "snbench probe failure Ã¢â‚¬â€œ rerun and capture output"
+  description: >
+    When snbench F probe fails during SLT, re-run the same snbench probe
+    command on the host and attach its output to the Jira ticket for analysis.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "snbench -m probe -F -d0"
+  action:
+    type: comment_only
+    command_steps:
+      - id: snbench_probe
+        cmd: "{hostnic} /opt/snbench/snbench -m probe -F -d0"
+        expect_contains: "Exit status (-1)"
+        on_expect_pass_comment: |
+          Test, please send to repair
+           
+           
+          Repair,
+          Please reseat smartnic and associated cabling, then check if failing command passes.
+
+
+          Command:
+          [{last_cmd_context}]{last_cmd}
+
+          Output:
+          {command_snbench_probe_stdout_code}
+        on_expect_fail_comment: |
+          Test, please retest.
+
+
+          Repair,
+          When manually checking failing command, it passes. Please release for retest.
+
+
+          {command_snbench_probe_stdout_code}
+
+
+
+#probe -d vs probe -F -d up there ^^^
+- id: snbench_probe_failed_rerun
+  name: "snbench probe failure Ã¢â‚¬â€œ rerun and capture output"
+  description: >
+    When snbench probe fails during SLT, re-run the same snbench probe
+    command on the host and attach its output to the Jira ticket for analysis.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "snbench -m probe -d 0"
+  action:
+    type: comment_only
+    command_steps:
+      - id: snbench_probe
+        cmd: "{hostnic} /opt/snbench/snbench -m probe -d 0"
+        expect_contains: "Exit status (-1)"
+        on_expect_pass_comment: |
+          Test, please send to repair
+           
+           
+          Repair,
+          Please reseat smartnic and associated cabling, then check if failing command passes.
+
+
+          Command:
+          [{last_cmd_context}]{last_cmd}
+
+          Output:
+          {command_snbench_probe_stdout_code}
+        on_expect_fail_comment: |
+          Test, please retest.
+
+
+          Repair,
+          When manually checking failing command, it passes. Please release for retest.
+
+
+          {command_snbench_probe_stdout_code}
+
+
+
+- id: snbench_probe_failed_rerunfw
+  name: "snbench probe failure Ã¢â‚¬â€œ rerun and capture output"
+  description: >
+    When snbench F probe fw fails during SLT, re-run the same snbench probe
+    command on the host and attach its output to the Jira ticket for analysis.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "snbench -m firmware -o sysupdate -d 0"
+  action:
+    type: comment_only
+    command_steps:
+      - id: snbench_probefw
+        cmd: "{hostnic} /opt/snbench/snbench -m firmware -o sysupdate -d 0"
+        expect_contains: "Exit status (-1)"
+        on_expect_pass_comment: |
+          Test, please send to repair
+           
+           
+          Repair,
+          Please reseat smartnic and associated cabling, then check if failing command passes.
+
+
+          Command:
+          [{last_cmd_context}]{last_cmd}
+
+          Output:
+          {command_snbench_probefw_stdout_code}
+        on_expect_fail_comment: |
+          Test, please retest.
+
+
+          Repair,
+          When manually checking failing command, it passes. Please release for retest.
+
+
+          {command_snbench_probefw_stdout_code}
+
+
+
+
+
+
+- id: hwdiag_system_info_failed_after_sp_reset_power_cable_miswired
+  name: "hwdiag system info failed after SP reset + power cable incorrectly attached"
+  description: >
+    If ticket contains "hwdiag system info executed failed after SP reset" AND
+    ILOM Open_Problems contains "A power cable is attached incorrectly", run
+    hwdiag system info and comment only lines containing "Potential power cabling issue".
+  priority: 35
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "hwdiag system info executed failed after SP reset"
+    ilom_open_problems_raw:
+      contains: "A power cable is attached incorrectly"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "hwdiag system info executed failed after SP reset"
+    - type: not_contains
+      value: "failed to reset BIOS back to factory defaults."
+  action:
+    type: comment_only
+    # Fallback if command expectations never decide a template
+    command_steps:
+      - id: hwdiag_system_info
+        cmd: "{diag} hwdiag system info"
+        line_contains: "Potential power cabling issue"
+        line_only: true
+        expect_contains: "Potential power cabling issue"
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        start_testview_on_fail: true
+        testview_operation_on_fail: "SLT"
+        testview_use_validate_on_fail: true
+
+        on_expect_pass_comment: |
+          Test, please send to repair
+
+          Repair,
+          Errors are present in command "hwdiag system info"
+
+          Please reseat cabling at location(s) shown in error output:
+
+          {command_hwdiag_system_info_selected_lines_code}
+
+
+
+- id: hwdiag_system_info_failed_after_sp_reset_power_cable_miswired
+  name: "hwdiag system info failed after SP reset + power cable incorrectly attached"
+  description: >
+    If ticket contains "hwdiag system info executed failed after SP reset" AND
+    ILOM Open_Problems contains "A power cable is attached incorrectly", run
+    hwdiag system info and comment only lines containing "indicates error".
+  priority: 35
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "hwdiag system info executed failed after SP reset"
+    ilom_open_problems_raw:
+      contains: "A power cable is attached incorrectly"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "hwdiag system info executed failed after SP reset"
+    - type: not_contains
+      value: "failed to reset BIOS back to factory defaults."
+  action:
+    start_slt: true           # triggers validate_and_start_slt()
+    slt_operation: "SLT"      # default, but explicit is nice
+    slt_use_validate: true    # run validate_server then start_test
+    type: comment_only
+    command_steps:
+      - id: hwdiag_system_info
+        cmd: "{diag} hwdiag system info"
+        line_contains: "Potential power cabling issue"
+        expect_contains: "Potential power cabling issue"
+        on_expect_pass_comment: |
+          Running SLT to generate logs for repair
+
+          repair, please reseat cabling at location(s):
+          {command_hwdiag_system_info_selected_lines_code}
+
+          TestView SLT start details (HTTP {slt_start_status}):
+
+    
+
+
+
+- id: hwdiag_i2c_test_all_v_rerun_non_pretest_pass_fail
+  name: "hwdiag i2c test all -v failed in ticket -> rerun and branch (NON PRETEST)"
+  description: >
+    When the ticket body contains:
+    "*Failure Message:* command 'hwdiag i2c test all -v' exited with non-zero return code 1."
+    and includes "*GUTI:*", rerun `hwdiag i2c test all -v` via diag.
+
+    If the rerun PASSES: ask repair to release and test to retest.
+    If it FAILS: paste non-OK lines and ask test to send to repair.
+  priority: 40
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: regex
+      value: '(?s)\*Failure Message:\*\s*command\s*''hwdiag i2c test all -v''\s*exited with non-zero return code\s*1\.\s*.*?\*GUTI:\*'
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      # 1) Run once and capture ONLY the final result line.
+      #    If the output does not contain PASSED or FAILED, no comment is posted.
+      - id: hwdiag_i2c_result
+        cmd: "{diag} hwdiag i2c test all -v"
+        line_contains: "I2C Test Result:"
+        line_only: true
+        stop_on_decision: false
+
+      # 2) PASS branch comment (requires the rerun output to contain PASSED).
+      #    Uses a no-op command; the decision comes from step 1 output.
+      - id: hwdiag_i2c_pass
+        cmd: "{diag} true"
+        if_previous_contains: "I2C Test Result: PASSED"
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Output:
+          {command_hwdiag_i2c_result_selected_lines_code}
+
+          Repair, please release the server.
+          Test, please retest once released.
+
+      # 3) FAIL branch comment (requires the result line to contain FAILED).
+      #    Includes all device lines that do NOT contain "OK".
+      - id: hwdiag_i2c_non_ok
+        cmd: "{diag} hwdiag i2c test all -v"
+        if_previous_contains: "I2C Test Result: FAILED"
+        line_contains: "/SYS/"
+        line_not_contains: "OK"
+        line_only: true
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          
+          Test, please send this server to repair.
+
+          Errors in I2C Test when manually running:
+          {command_hwdiag_i2c_non_ok_selected_lines_code}
+
+          Final result:
+          {command_hwdiag_i2c_result_selected_lines_code}
+
+          Test, please send this server to repair.
+
+
+
+- id: System_faults_hardware_configuration
+  name: "start: System faults or hardware configuration prevents power on."
+  description: >
+    example
+  priority: 35
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "start: System faults or hardware configuration prevents power on."
+    ilom_open_problems_raw:
+      contains: "A power cable is attached incorrectly"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "start: System faults or hardware configuration prevents power on."
+  action:
+    start_slt: true           # triggers validate_and_start_slt()
+    slt_operation: "SLT"      # default, but explicit is nice
+    slt_use_validate: true    # run validate_server then start_test
+    type: comment_only
+    command_steps:
+      - id: system_info
+        cmd: "{ilom} start -script SYS"
+        line_contains: "start: System faults or hardware configuration"
+        expect_contains: "start: System faults or hardware configuration"
+        on_expect_pass_comment: |
+          Running SLT to generate logs for repair
+
+          repair, please check for power cabling related issues and reseat CPUs. Unable to start SYS:
+          {command_system_info_selected_lines_code}
+
+          SLT start details (HTTP {slt_start_status}):
+
+          
+- id: System_faults_hardware_configuration_fan
+  name: "start: System faults or hardware configuration prevents power on."
+  description: >
+    example
+  priority: 35
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "start: System faults or hardware configuration prevents power on."
+    ilom_open_problems_raw:
+      contains: "Fan module has a fan that is rotating too slowly."
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "start: System faults or hardware configuration prevents power on."
+  action:
+    type: comment_only
+    command_steps:
+      - id: open
+        cmd: "{ilom} show /System/Open_Problems"
+        line_contains: "Fan module has a fan that is rotating too slowly."
+        line_before: 1
+        line_after: 0
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Test, please send to Repair.
+
+          Repair,
+
+          Please reseat/swap failing fan module:
+          {command_open_selected_lines_code}
+
+
+
+
+
+- id: setpsnc_failed_fim_missing_not_pretest_send_to_repair
+  name: "setpsnc failed + FIM missing/not connected (NOT PRETEST) -> send to repair"
+  description: >
+    If setpsnc exited non-zero and ILOM reports FIM Module missing/not connected,
+    and latest DB testset is NOT PRETEST, instruct to send to repair and print ILOM Open_Problems.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "command setpsnc -p '8218420'"
+    ilom_open_problems_raw:
+      contains: "The FIM Module is missing or not properly connected."
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "command setpsnc -p '8218420'"
+    - type: contains
+      value: "exited with non-zero return code 1"
+  action:
+    type: comment_only
+    comment_template: |
+      Test, please send to repair.
+
+      Repair, 
+
+
+      Please reseat FIM cabling and ROT connections:
+
+
+      {ilom_open_problems_code}
+
+
+
+- id: setpsnc_failed_fim_missing_pretest_start_slt
+  name: "setpsnc failed + FIM missing/not connected (PRETEST) -> start SLT"
+  description: >
+    If setpsnc exited non-zero and ILOM reports FIM Module missing/not connected,
+    and latest DB testset IS PRETEST, comment and start SLT (validate+start).
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "command setpsnc -p '8218420'"
+    ilom_open_problems_raw:
+      contains: "The FIM Module is missing or not properly connected."
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "command setpsnc -p '8218420'"
+    - type: contains
+      value: "exited with non-zero return code 1"
+  action:
+    type: comment_only
+    start_slt: true
+    slt_operation: "SLT"
+    slt_use_validate: true
+    comment_template: |
+      Running SLT to generate logs for repair.
+
+      Please reseat FIM cabling and ROT connections:
+  
+      {ilom_open_problems_code}
+
+
+      SLTstart(HTTP{slt_start_status}):
+
+
+
+
+- id: power_fault_fpga_denied_not_pretest_comment
+  name: "Power fault prevents power on + FPGA denied power-on (NOT PRETEST)"
+  description: >
+    If the ticket shows Power fault prevents power on and ILOM Open Problems shows
+    FPGA denied power-on request by SP, comment with the ILOM Open Problems.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "Power fault prevents power on."
+    ilom_open_problems_raw:
+      contains: "request that was denied by the service processor"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Power fault prevents power on."
+  action:
+    type: comment_only
+
+    command_steps:
+      - id: ilom_start_sys
+        cmd: "{ilom} start -script SYS"
+        expect_status: 0
+        expect_contains: ""
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Test, please send to repair
+
+          Repair, 
+
+          Please reseat/check CPUs and PSUs for any power related faults.
+
+
+          {command_ilom_start_sys_stdout_code}
+
+
+- id: power_fault_fpga_denied_pretest_start_slt
+  name: "Power fault prevents power on + FPGA denied power-on (PRETEST) -> start SLT"
+  description: >
+    Same condition as NOT PRETEST, but if latest DB testset is PRETEST, also start SLT.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "Power fault prevents power on."
+    ilom_open_problems_raw:
+      contains: "request that was denied by the service processor"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Power fault prevents power on."
+  action:
+    type: comment_only
+    # IMPORTANT:
+    # Do NOT set action-level start_slt here.
+    # The command_step below will request SLT only on PASS.
+    # start_slt: true
+    # slt_operation: "SLT"
+    # slt_use_validate: true
+
+    command_steps:
+      - id: ilom_start_sys
+        cmd: "{ilom} start -script SYS"
+        expect_contains: ""
+        stop_on_decision: true
+
+        # Ã¢Å“â€¦ Start SLT ONLY if this step passes AND on_expect_pass_comment is used
+        start_testview_on_pass: true
+        testview_operation_on_pass: "SLT"
+        testview_use_validate_on_pass: true
+
+        on_expect_pass_comment: |
+          Running SLT to generate logs for repair
+
+          Repair,
+
+          Please reseat/check CPUs and PSUs for any power related faults.
+
+          {command_ilom_start_sys_stdout_code}
+
+          SLT start (HTTP {slt_start_status}):
+
+
+
+- id: create_firmware_xml_drive_not_ready_pretest_ssd_compare_start_slt
+  name: "firmware.xml missing in jar + drives not ready (PRETEST) -> eve_ssd_comparison"
+  description: >
+    If the ticket shows:
+      - Failure Message starts with "The number of drives... not ready"
+      - "Jar Package error info: /firmware.xml not found in Jar." appears immediately before GUTI
+      - Failed Testcase is 1_CREATE_FIRMWARE_XML
+
+    Then run `eve_ssd_comparison` on RAMSES (last 5 lines) and comment with the output.
+  priority: 30
+  scope:
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "eve_ssd_comparison (1_CREATE_FIRMWARE_XML)"
+  patterns:
+    - type: contains
+      value: "*Failure Message:* The number of drives"
+    # - type: contains
+    #   value: "/firmware.xml not found in Jar"
+    # - type: contains
+    #   value: "Failed Testcase: 1_CREATE_FIRMWARE_XML"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: "eve_ssd_comparison"
+        cmd: "{local} set -o pipefail; SCRIPT='/home/tester/WesleyH/eve_ssd_comparison.pyc'; if [ ! -f \"$SCRIPT\" ]; then echo \"[ERROR] eve_ssd_comparison script not found: $SCRIPT\"; exit 127; fi; echo {sn} | python3 \"$SCRIPT\" 2>&1 | tail -n 5 | sed -r 's/\\x1B\\[[0-9;]*[mK]//g'"
+        expect_status: 0
+        expect_contains: "[INFO] 3-way disk counts match."
+        expect_not_contains: "[ERROR] 3-way disk count mismatch."
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        start_testview_on_fail: true
+        testview_operation_on_fail: "SLT"
+        testview_use_validate_on_fail: true
+        on_expect_pass_comment: |
+          When manually checking, all SSDs match across ILOM and hostnic. 
+
+
+          eve_ssd_comparison results:
+          {command_eve_ssd_comparison_stdout_code}
+
+          Rerunning Pretest.
+
+          PRETEST start (HTTP {slt_start_status}):
+
+
+        on_expect_fail_comment: |
+          Running SLT to generate logs for repair.
+
+          Repair,
+          Please find and reseat the undetected SSD.
+
+          eve_ssd_comparison results:
+          {command_eve_ssd_comparison_stdout_code}
+
+
+          SLT start (HTTP {slt_start_status}):
+
+
+- id: create_firmware_xml_drive_not_ready_slt_ssd_compare_send_repair
+  name: "firmware.xml missing in jar + drives not ready (SLT) -> run eve_ssd_comparison + send to repair"
+  description: >
+    Same condition as PRETEST rule, but when latest testset is NOT PRETEST.
+    Run `eve_ssd_comparison` on RAMSES (last 5 lines) and comment with the output.
+  priority: 30
+  scope:
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "eve_ssd_comparison (1_CREATE_FIRMWARE_XML)"
+  patterns:
+    - type: contains
+      value: "*Failure Message:* The number of drives"
+    # - type: contains
+    #   value: "/firmware.xml not found in Jar"
+    # - type: contains
+    #   value: "Failed Testcase: 1_CREATE_FIRMWARE_XML"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: "eve_ssd_comparison"
+        cmd: "{local} set -o pipefail; SCRIPT='/home/tester/WesleyH/eve_ssd_comparison.pyc'; if [ ! -f \"$SCRIPT\" ]; then echo \"[ERROR] eve_ssd_comparison script not found: $SCRIPT\"; exit 127; fi; echo {sn} | python3 \"$SCRIPT\" 2>&1 | tail -n 5 | sed -r 's/\\x1B\\[[0-9;]*[mK]//g'"
+        expect_status: 0
+        expect_contains: "[INFO] 3-way disk counts match."
+        expect_not_contains: "[ERROR] 3-way disk count mismatch."
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Repair,
+          Please release for retest.
+
+          When manually checking, all SSDs match across ILOM and hostnic. 
+
+
+          eve_ssd_comparison results:
+          {command_eve_ssd_comparison_stdout_code}
+
+
+        on_expect_fail_comment: |
+
+          Test, please send to repair.
+
+          Repair,
+          Please find and reseat the undetected SSD.
+
+          eve_ssd_comparison results:
+          {command_eve_ssd_comparison_stdout_code}
+
+- id: boot_fwid_2_not_found_non_pretest
+  name: "Boot FWID 2 not found in readSerial (non-PRETEST)"
+  description: >
+    If failure message indicates Boot fwid 2 is not found in readSerial output
+    and the latest failed testset is NOT PRETEST, post guidance without
+    starting SLT.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "Boot fwid 2' not found in readSerial output"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Boot fwid 2' not found in readSerial output"
+  action:
+    type: comment_only
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+
+      Please reseat WIPE cables on both ends and check ROT cards for for bent pins/damage.
+
+      `'Boot fwid 2' not found in readSerial output.`
+
+
+- id: fan_module_rotating_too_slow_sys_fm_in_fmadm_comment
+  name: "Fan module rotating too slowly + /SYS/FM in fmadm faulty -a"
+  description: >
+    If the ticket text contains "Description: Fan module has a fan that is rotating too slowly."
+    AND `fmadm faulty -a` output contains "/SYS/FM", comment with the matching /SYS/FM lines.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Description: Fan module has a fan that is rotating too slowly."
+  action:
+    type: comment_only
+    # Note: With current RackBrain behavior, a rule match is decided before running commands.
+    # This command expectation can control the *comment template used*, but it can't fully
+    # prevent a comment unless the code is updated to support "no-comment-on-fail".
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_contains: "/SYS/FM"
+        stop_on_decision: true
+        line_contains: "/SYS/FM"
+        line_only: true
+        on_expect_pass_comment: |
+          Test, please send to repair.
+
+          Repair,
+
+          Please reseat/swap failing fans
+          
+          `fmadm faulty -a` output indicating fan failure location:
+
+          {command_fmadm_faulty_selected_lines_code}
+
+
+- id: rot_cable_ilom_power_state_eof_pretest_start_pretest
+  name: "ROT cable: ILOM power_state EOF (PRETEST) -> validate + start PRETEST"
+  description: >
+    If Failed Testcase is 6_CHECK_ROT_CABLE and the ticket shows an EOF while running
+    "show -display properties /SYS power_state" in ILOM, re-run that ILOM command.
+    If it passes, start PRETEST and comment. If it fails, comment to reseat ROT and cabling.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    testcase:
+      contains: "6_CHECK_ROT_CABLE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Failed to exec command 'show -display properties /SYS power_state' in ILOM"
+    - type: contains
+      value: "End Of File (EOF)"
+  action:
+    type: comment_only
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+      Please reseat ROT and associated cabling, then retest.
+
+    command_steps:
+      - id: "ilom_power_state"
+        cmd: "{ilom} show -display properties /SYS power_state"
+        expect_status: 0
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        on_expect_pass_comment: |
+          ILOM `/SYS power_state` command succeeded:
+          {{code}}
+          {command_ilom_power_state_cmd}
+          {{code}}
+          {command_ilom_power_state_stdout_code}
+
+          Cause was likely a temporary connection failure.
+
+          Starting PRETEST to confirm.
+
+          PRETEST start (HTTP {slt_start_status}):
+
+
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          Failed to run ILOM command `show -display properties /SYS power_state` (EOF/platform exception likely).
+
+          Please reseat ROT and associated cabling, then retest.
+
+
+- id: rot_cable_ilom_power_state_eof_not_pretest_release_retest
+  name: "ROT cable: ILOM power_state EOF (NOT PRETEST) -> release for retest"
+  description: >
+    Same condition as PRETEST rule, but when latest DB testset is NOT PRETEST.
+    If the ILOM power_state command passes, comment asking repair to release for retest.
+    If it fails, comment to reseat ROT and cabling.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    testcase:
+      contains: "6_CHECK_ROT_CABLE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Failed to exec command 'show -display properties /SYS power_state' in ILOM"
+    - type: contains
+      value: "End Of File (EOF)"
+  action:
+    type: comment_only
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+      Please reseat ROT and associated cabling, then retest.
+    command_steps:
+      - id: "ilom_power_state"
+        cmd: "{ilom} show -display properties /SYS power_state"
+        expect_status: 0
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          ILOM `/SYS power_state` command succeeded:
+          {{code}}
+          {command_ilom_power_state_cmd}
+          {{code}}
+          {command_ilom_power_state_stdout_code}
+
+          Cause was likely a temporary connection failure.
+
+          Repair,
+          Please release the server for retest.
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          Failed to run ILOM command `show -display properties /SYS power_state` (EOF/platform exception likely).
+
+          Please reseat ROT and associated cabling, then retest.
+
+
+- id: ilom_failed_exec_can_not_find_prompt_pretest_rerun_pretest
+  name: "ILOM command failed (can not find prompt) (PRETEST) -> rerun + start PRETEST"
+  description: >
+    If the ticket shows a failure like:
+      "Failed to exec command '<ilom_cmd>' in ILOM ... can not find prompt"
+
+    Re-run the extracted ILOM command. If it succeeds, rerun PRETEST. If it fails, send to repair.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Failed to exec command '"
+    - type: contains
+      value: "' in ILOM"
+    - type: contains
+      value: "can not find prompt"
+    - type: not_contains
+      value: "Failed to connect ILOM console."
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    text_extracts:
+      - name: ilom_failed_cmd
+        source: combined_text
+        line_contains: "Failed to exec command '"
+        line_between_start_contains: "Failed to exec command '"
+        line_between_end_contains: "' in ILOM"
+        lines_before: 0
+        lines_after: 0
+    command_steps:
+      - id: "ilom_rerun_failed_cmd"
+        cmd: "{ilom} {ilom_failed_cmd}"
+        expect_status: 0
+        expect_not_contains: "Invalid command"
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        on_expect_pass_comment: |
+          ILOM command succeeded, so the original error was likely a temporary prompt/connection issue:
+
+          {{code}}
+          -> {ilom_failed_cmd}
+          {command_ilom_rerun_failed_cmd_stdout}
+          {{code}}
+
+          Rerunning PRETEST.
+
+          PRETEST start (HTTP {slt_start_status}):
+
+
+        on_expect_fail_comment: |
+          Test, please send this server to repair.
+
+          Repair,
+          ILOM command failed to execute (can not find prompt).
+
+          {{code}}
+          -> {ilom_failed_cmd}
+          {command_ilom_rerun_failed_cmd_stdout}
+          {{code}}
+
+
+- id: command_exited_nonzero_rc1_pretest_rerun_pretest
+  name: "Command exited non-zero rc=1 (PRETEST) -> rerun + start PRETEST"
+  description: >
+    If the ticket shows a failure like:
+      "*Failure Message:* command '<cmd>' exited with non-zero return code 1."
+
+    Re-run the extracted command in diag. If it succeeds, rerun PRETEST. If it fails, send to repair.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "*Failure Message:* command '"
+    - type: contains
+      value: "exited with non-zero return code 1"
+    - type: contains
+      value: "*GUTI:*"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    text_extracts:
+      - name: diag_failed_cmd
+        source: combined_text
+        line_contains: "*Failure Message:* command '"
+        line_between_start_contains: "command '"
+        line_between_end_contains: "'"
+        lines_before: 0
+        lines_after: 0
+    command_steps:
+      - id: "diag_rerun_failed_cmd"
+        cmd: "{diag} {diag_failed_cmd}"
+        expect_status: 0
+        expect_not_contains:
+          - "Invalid command"
+          - "Result: FAILED"
+          - "Error:"
+        between_start_contains: "diag>"
+        between_end_contains: "diag> exit"
+        line_not_contains: "diag>"
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "PRETEST"
+        testview_use_validate_on_pass: true
+
+        on_expect_pass_comment: |
+          Command succeeded, so the original failure was likely transient:
+
+          {{code}}
+          -> {diag_failed_cmd}
+          {command_diag_rerun_failed_cmd_selected_lines}
+          {{code}}
+
+          Rerunning PRETEST.
+
+          PRETEST start (HTTP {slt_start_status}):
+
+
+        on_expect_fail_comment: |
+          Test, please send this server to repair.
+
+          Repair,
+          Command output still indicates failure when re-running in diag.
+
+          {{code}}
+          -> {diag_failed_cmd}
+          {command_diag_rerun_failed_cmd_selected_lines}
+          {{code}}
+
+
+- id: fruupdate_fim_fru_identityr_pretest_prtfru_sunservice_start_slt_or_rerun_pretest
+  name: "FRU_IdentityR /SYS/FIM (PRETEST) -> prtfru + start SLT or rerun PRETEST"
+  description: >
+    If the ticket contains `/usr/local/bin/fruupdate -c /SYS/FIM -r FRU_IdentityR`, run
+    `prtfru /SYS/FIM` using the sunservice account.
+
+    - If output contains `"/SYS/FIM" not found`: start SLT and comment (send to repair after SLT fails).
+    - Else: rerun PRETEST and comment (command is passing / no "not found" string seen).
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "/usr/local/bin/fruupdate -c /SYS/FIM -r FRU_IdentityR"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: "prtfru_fim_check"
+        cmd: "{sunservice} prtfru /SYS/FIM 2>&1"
+        expect_contains: '"/SYS/FIM" not found'
+        stop_on_decision: true
+
+        start_testview_on_pass: true
+        testview_operation_on_pass: "SLT"
+        testview_use_validate_on_pass: true
+
+        start_testview_on_fail: true
+        testview_operation_on_fail: "PRETEST"
+        testview_use_validate_on_fail: true
+
+        on_expect_pass_comment: |
+          `/SYS/FIM` not found via sunservice `prtfru /SYS/FIM`:
+
+          {command_prtfru_fim_check_stdout_code}
+
+          Starting SLT to generate logs for repair.
+
+          After SLT fails, please send to repair.
+
+          SLT start (HTTP {slt_start_status}):
+
+
+        on_expect_fail_comment: |
+          `prtfru /SYS/FIM` did not show `"/SYS/FIM" not found`:
+          
+          {command_prtfru_fim_check_stdout_code}
+
+          Rerunning PRETEST to confirm.
+
+          PRETEST start (HTTP {slt_start_status}):
+
+
+
+- id: fruupdate_fim_fru_identityr_slt_prtfru_sunservice_send_repair_or_rerun_slt
+  name: "FRU_IdentityR /SYS/FIM (SLT) -> prtfru + send to repair or rerun SLT"
+  description: >
+    Same condition as PRETEST rule, but when the latest testset is NOT PRETEST.
+
+    - If output contains `"/SYS/FIM" not found`: comment (send to repair) and include command output.
+    - Else: rerun SLT and comment (command is passing / no "not found" string seen).
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "/usr/local/bin/fruupdate -c /SYS/FIM -r FRU_IdentityR"
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: "prtfru_fim_check"
+        cmd: "{sunservice} prtfru /SYS/FIM 2>&1"
+        expect_contains: '"/SYS/FIM" not found'
+        stop_on_decision: true
+
+        start_testview_on_fail: true
+        testview_operation_on_fail: "SLT"
+        testview_use_validate_on_fail: true
+
+        on_expect_pass_comment: |
+          Test, please send to repair.
+
+          Repair,
+          `/SYS/FIM` not found via sunservice `prtfru /SYS/FIM`:
+
+          {command_prtfru_fim_check_stdout_code}
+
+        on_expect_fail_comment: |
+          `prtfru /SYS/FIM` did not show `"/SYS/FIM" not found`:
+
+          {command_prtfru_fim_check_stdout_code}
+
+          Rerunning SLT to confirm.
+
+          SLT start (HTTP {slt_start_status}):
+
+
+
+- id: sppost_fault_chassis_device_send_repair_check_cpus_dimms
+  name: "SPPOST fault.chassis.device.sppost -> send to repair (CPUs + DIMMs)"
+  description: >
+    When the ticket Failure Message indicates `fault.chassis.device.sppost` (Service Processor POST),
+    instruct to send the server to repair to check CPUs and DIMMs.
+  priority: 20
+  scope:
+    arch: "EVE"
+  patterns:
+    - type: regex
+      value: '(?s)\*Failure Message:\*\s*Faults found in output of command\s*"fmadm faulty -a":.*?Problem class:\s*fault\.chassis\.device\.sppost.*?\*GUTI:\*'
+  action:
+    type: comment_only
+    close: false
+    comment_template: |
+      Please send the server to Repair to check CPUs and DIMMs
+
+
+
+- id: ac_maybe_not_restart_pretest_check_cabling_psu
+  name: "AC maybe not restart (PRETEST) -> check 1G/PSU connections, else repair"
+  description: >
+    When the ticket body contains "*Failure Message:* AC maybe not restart." and includes "*GUTI:*",
+    for PRETEST failures, instruct test to verify correct RU cabling/PSU connections and retest if needed,
+    otherwise send to repair to check CPUs.
+  priority: 20
+  scope:
+    arch: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: regex
+      value: '(?s)\*Failure Message\s*:\*\s*AC maybe not restart\.?\s*.*?\*GUTI:\*'
+  action:
+    type: comment_only
+    close: false
+    text_extracts:
+      - name: ac_maybe_not_restart_block
+        source: combined_text
+        between_start_contains: "*Failure Message"
+        between_end_contains: "*GUTI:*"
+    comment_template: |
+
+      Please check if 1g cables and power supply connections are for the correct RU location. 
+      
+      If they were not plugged in properly, please reseat and retest. 
+
+      If everything looks ok and the cables are connected correctly, please move the server to a different location and retest..
+
+
+- id: flash_firmware_slot_6100_failed_send_repair_reseat_hostnic
+  name: "Flash firmware to slot 61:00.0 failed -> send to repair (reseat hostnic/cabling)"
+  description: >
+    When the ticket body contains "*Failure Message:* flash firmware to slot: 61:00.0 failed with non-zero exitcode."
+    and includes "*GUTI:*", instruct test to send the server to repair for hostnic/cabling reseat, and include the
+    specific failure line in the comment.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+  patterns:
+    - type: contains
+      value: "*Failure Message:* flash firmware to slot: 61:00.0 failed with non-zero exitcode."
+    - type: contains
+      value: "*GUTI:*"
+  action:
+    type: comment_only
+    close: false
+    text_extracts:
+      - name: flash_firmware_failure_line
+        source: combined_text
+        between_start_contains: "flash firmware"
+        between_end_contains: "*GUTI:*"
+        line_contains: "flash firmware to slot:"
+        lines_before: 0
+        lines_after: 0
+    comment_template: |
+      Test,
+
+      Please send this server to repair, thanks
+
+      Repair,
+
+      Please reseat hostnic and associated cabling. Check if issue is resolved by running failing testcase, thanks.
+
+      {{code}}
+      {flash_firmware_failure_line}
+      {{code}}
+
+
+- id: hostnic_vid_did_after_deassert_gi_fail_send_repair
+  name: "HOSTNIC VID:DID after de-assert GI FAIL -> send to repair (reinstall hostnic + ROT WIPE cabling)"
+  description: >
+    When the ticket shows "*Failure Message:* VID:DID:SSVID:SSDID for HOSTNIC 0000:61:00.0 after de-assert in GI:"
+    and "Check Result:  FAIL." with a GUTI, instruct to send the server to repair to reinstall hostnic and ROT WIPE
+    cabling.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+  patterns:
+    - type: contains
+      value: "*Failure Message:* VID:DID:SSVID:SSDID for HOSTNIC 0000:61:00.0 after de-assert in GI:"
+    - type: contains
+      value: "Check Result:  FAIL."
+    - type: contains
+      value: "*GUTI:*"
+  action:
+    type: comment_only
+    close: false
+    text_extracts:
+      - name: hostnic_vid_did_failure_block
+        source: combined_text
+        between_start_contains: "*Failure Message:* VID:DID:SSVID:SSDID for HOSTNIC 0000:61:00.0 after de-assert in GI:"
+        between_end_contains: "Result:"
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+      Please reinstall hostnic and ROT WIPE cabling, then retest.
+
+      {{code}}
+      {hostnic_vid_did_failure_block}
+      {{code}}

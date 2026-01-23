@@ -1,0 +1,173 @@
+# Workflow rules: BIOS deferred update failure -> reset BIOS defaults -> follow up
+# Multi-step flow (no Jira marker needed):
+#  1) Set /System/BIOS reset_to_defaults=factory and verify
+#  2) Start 60s timer
+#  3) After timer expiry, re-check /System/BIOS for reset_to_defaults=none and decide next action
+#
+# Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+
+- id: bios_deferred_update_reset_defaults_stage1
+  name: "BIOS deferred update failed -> set reset_to_defaults=factory (stage 1)"
+  description: >
+    If the ticket mentions "The deferred update of the system BIOS has failed.", run ILOM commands to
+    set BIOS reset_to_defaults to factory. If successful, wait 60 seconds (timer) before follow-up.
+    If any step fails, comment to send to repair to reseat CMOS + CPUs and include command output.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    combined_text:
+      contains: "The deferred update of the system BIOS has failed."
+  patterns:
+    - type: contains
+      value: "The deferred update of the system BIOS has failed."
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: ilom_set_bios_factory_defaults
+        cmd: "{ilom} set /System/BIOS reset_to_defaults=factory"
+        expect_status: 0
+        expect_contains: "Set 'reset_to_defaults' to 'factory'"
+        stop_on_decision: true
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          Unable to set BIOS reset_to_defaults to factory after BIOS deferred update failure.
+          Please reseat CMOS and CPUs, then retry.
+
+          Commands + output:
+          {all_commands_code}
+
+      - id: ilom_show_bios_after_set
+        cmd: "{ilom} show /System/BIOS"
+        expect_status: 0
+        expect_contains: "reset_to_defaults = factory"
+        stop_on_decision: true
+        timer_after_seconds: 60
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          BIOS reset_to_defaults did not report as factory after setting it. Please reseat CMOS and CPUs, then retry.
+
+          Commands + output:
+          {all_commands_code}
+
+
+- id: bios_deferred_update_reset_defaults_stage2_pretest
+  name: "BIOS deferred update failed -> follow up after 60s (PRETEST)"
+  description: >
+    Follow-up after stage 1 timer expires. Re-check ILOM show /System/. If reset_to_defaults becomes none,
+    start PRETEST and comment. Otherwise send to repair to reseat CMOS + CPUs.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    combined_text:
+      contains: "The deferred update of the system BIOS has failed."
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    timer_expired_for: "bios_deferred_update_reset_defaults_stage1"
+  patterns:
+    - type: contains
+      value: "The deferred update of the system BIOS has failed."
+  action:
+    type: comment_only
+    close: false
+
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+
+    comment_template: ""
+    command_steps:
+      - id: ilom_show_system_followup
+        cmd: "{ilom} show /System/BIOS"
+        expect_status: 0
+        expect_contains: "reset_to_defaults = none"
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Confirmed BIOS deferred-reset flag is cleared (reset_to_defaults = none). Starting PRETEST to confirm.
+
+          PRETEST start (HTTP {slt_start_status}):
+          {slt_start_response_code}
+
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings. Please reseat CMOS and CPUs.
+
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
+
+
+- id: bios_deferred_update_reset_defaults_stage2_not_pretest
+  name: "BIOS deferred update failed -> follow up after 60s (NOT PRETEST)"
+  description: >
+    Follow-up after stage 1 timer expires. Re-check ILOM show /System/. If reset_to_defaults becomes none,
+    ask repair to release for rerun SLT/retest. Otherwise send to repair to reseat CMOS + CPUs.
+  priority: 30
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    combined_text:
+      contains: "The deferred update of the system BIOS has failed."
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    timer_expired_for: "bios_deferred_update_reset_defaults_stage1"
+  patterns:
+    - type: contains
+      value: "The deferred update of the system BIOS has failed."
+  action:
+    type: comment_only
+    close: false
+    comment_template: ""
+    command_steps:
+      - id: ilom_show_system_followup
+        cmd: "{ilom} show /System/BIOS"
+        expect_status: 0
+        expect_contains: "reset_to_defaults = none"
+        stop_on_decision: true
+        on_expect_pass_comment: |
+          Confirmed BIOS deferred-reset flag is cleared (reset_to_defaults = none).
+
+          Repair,
+          Please release the server to rerun SLT / retest.
+
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}
+        on_expect_fail_comment: |
+          Test, please send to repair.
+
+          Repair,
+          BIOS reset_to_defaults did not return to none(default) after resetting to factory settings. Please reseat CMOS and CPUs.
+
+          Commands + output:
+          {{code}}
+          -> show /System/BIOS
+          {command_ilom_show_system_followup_stdout}
+          {{code}}

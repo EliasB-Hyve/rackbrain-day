@@ -1,0 +1,19 @@
+- id: cinder_verification_close
+  name: "Outpost Refurb - Cinder Verification"
+  description: "Close Outpost Refurb Cinder Verification tickets with Cinder report output and reassign to reporter."
+  priority: 1000
+  scope:
+    jira_location: "Fremont"
+    jira_customer:
+      contains: "Woody (Outpost)"
+  patterns:
+    - type: contains
+      value: "Outpost Refurb - Cinder Verification"
+  action:
+    type: comment_only
+    assign_to: ""  # override global processing.assign_to (no intermediate assignment)
+    transition_to: "Closed"
+    transition_comment_mode: "during_transition"
+    reassign_to: "{jira_reporter}"
+    comment_template: |
+      {cinder_report_code}

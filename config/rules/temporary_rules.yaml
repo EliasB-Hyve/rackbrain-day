@@ -1,0 +1,65 @@
+# Temporary / on-the-fly rules (e.g., outages).
+#
+# This file is intentionally kept separate so you can add/remove rules quickly
+# without touching your core rule sets.
+#
+# Must remain a YAML LIST (use `[]` when empty).
+
+# - id: fw_dir_pn_8212420_link_prodiss_15074
+#   name: "FW directory missing for PN 8212420 -> link to PRODISS-15074"
+#   description: >
+#     When a ticket reports 'Failed to get firmware directory by pn: 8212420 from GI',
+#     link it to the master PRODISS ticket for tracking.
+#   priority: 100
+#   scope:
+#     jira_comments_text:
+#       not_contains: "Linked to PRODISS-15074 for tracking."
+#   patterns:
+#     - type: contains
+#       value: "Failed to get firmware directory by pn: 8212420 from GI"
+#     - type: contains
+#       value: "{'8206762': 'Oracle-Single-Port-QSFP56-CX6-DX'}"
+#   action:
+#     type: "comment_only"
+#     close: false
+#     transition_to: "Pending Escalation"
+#     comment_template: |
+#       Linked to PRODISS-15074 for tracking.
+#     link_issue:
+#       type: "is blocked by"
+#       target: "PRODISS-15074"
+
+
+
+# - id: 2_BOM_CHECK_DRIVE
+#   name: "Part no of /SYS/IOU8/SSD800 in system:
+#     SSDPF2KX038T1S
+#     Check Result: FAIL
+#     Part no of /SYS/IOU8/SSD801 in SFCS:
+#     8223263"
+#   description: >
+#     When a ticket reports 'Part no of /SYS/IOU8/SSD800 in SFCS:
+#     8223263
+#     Part no of /SYS/IOU8/SSD800 in system:
+#     SSDPF2KX038T1S
+#     Check Result: FAIL',
+#     link it to the master PRODISS ticket for tracking.
+#   priority: 100
+#   allow_high_slt_attempts: true
+#   scope:
+#     jira_comments_text:
+#       not_contains: "Linked to "
+#   patterns:
+#     - type: contains
+#       value: "Part no of /SYS/IOU8/SSD801 in SFCS"
+#     - type: contains
+#       value: "in PLM"
+#   action:
+#     type: "comment_only"
+#     close: false
+#     transition_to: "Pending Escalation"
+#     comment_template: |
+#       Linked to PRODISS-15112 for tracking, please hold until further instruction.
+#     link_issue:
+#       type: "is blocked by"
+#       target: "PRODISS-15112"

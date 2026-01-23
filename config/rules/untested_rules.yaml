@@ -1,0 +1,191 @@
+
+
+- id: pcie_lnksta_check_not_pretest_release_retest_or_repair
+  name: "PCIe link speed/width mismatch -> hostnic LnkSta (NOT PRETEST)"
+  description: >
+    For non-PRETEST: run hostnic LnkSta for each PCIe address listed in the ticket (GI lines).
+    If any output contains 'downgraded' OR any address has no output, send to repair.
+    Otherwise ask repair to release the server and retest 1.
+  priority: 25
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "Link speed/width for PCIE slot"
+    - type: contains
+      value: "Check Result: FAIL"
+    - type: contains
+      value: "12_CHECK_PCIE_LINK_SPEED_WIDTH"
+    - type: not_contains
+      value: "The number of Drive on the UUT is inconsistent with the number on SFCS"
+    - type: not_contains
+      value: "The number of drives read on the server is inconsistent with that in ilom, seems some Drive is not ready."
+  action:
+    type: comment_only
+
+    text_extracts:
+      - name: pcie_addresses
+        source: combined_text
+        line_contains: ":00.0 in GI:"
+        line_between_start_contains: "slot "
+        line_between_end_contains: " in GI:"
+        take: all
+        default: ""
+
+    command_steps:
+      - id: pcie_lnksta
+        for_each_extract: pcie_addresses
+        cmd: "{hostnic} echo '--- [item] ---' ; lspci -vvv -s [item] | grep -i LnkSta"
+        expect_status: 0
+        expect_contains: "LnkSta"
+        expect_not_contains: "downgraded"
+        stop_on_decision: true
+
+        on_expect_fail_comment: |
+          Test, please send to FA for review.
+
+          Addresses checked (00.0 only):
+          {pcie_addresses}
+
+          Commands + output:
+          {all_commands_code}
+
+    comment_template: |
+      Please send to FA for review
+    
+      PCIe LnkSta check looks OK on hostnic (no downgraded links and LnkSta output present for all addresses listed).
+
+      Addresses checked (00.0 only):
+      {pcie_addresses}
+
+      Commands + output:
+      {all_commands_code}
+
+
+
+
+
+
+- id: gpu_sn_mismatch_send_to_repair_non_pretest
+  name: "GPU SN mismatch (SFCS vs system) -> reseat missing GPU (NON PRETEST)"
+  description: >
+    If GPU SNs listed in SFCS don't match system list, send to repair and reseat the missing GPU + cabling.
+    Only applies when latest DB failed testset is NOT PRETEST.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    combined_text:
+      contains: "GPU SNs in SFCS:"
+  patterns:
+    - type: contains
+      value: "GPU SNs in SFCS:"
+    - type: contains
+      value: "GPU SNs in system:"
+    - type: contains
+      value: "Check Result:"
+  action:
+    type: comment_only
+    close: false
+    text_extracts:
+      - name: gpu_sns_sfcs
+        source: combined_text
+        between_start_contains: "GPU SNs in SFCS:"
+        between_end_contains: "GPU SNs in system:"
+        line_contains: "    "
+        take: first
+        default: ""
+      - name: gpu_sns_system
+        source: combined_text
+        between_start_contains: "GPU SNs in system:"
+        between_end_contains: "Check Result:"
+        line_contains: "    "
+        take: first
+        default: ""
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+      One or more GPUs appear missing from the system compared to SFCS. Please reseat the missing GPU(s) and associated cabling.
+
+      GPU SNs in SFCS:
+      
+      {gpu_sns_sfcs}
+
+      GPU SNs in system:
+
+      {gpu_sns_system}
+
+
+
+
+
+- id: uefidiag_failed_sys_power_off_test_testview_cases
+  name: "UEFIdiag failed -> TestView cases (SYS_POWER_OFF_TEST / 10_UEFIDIAG_EXTENDED)"
+  description: >
+    When the ticket text contains "Failure Message: Run UEFIdiag's failed.",
+    fetch the SYS_POWER_OFF_TEST / 10_UEFIDIAG_EXTENDED TestView log once and
+    choose a comment based on ordered TestView cases (first match wins).
+
+    If no case matches, post no comment.
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    jira_comments_text:
+      not_contains: "UEFIDIAG_EXTENDED log match:"
+  patterns:
+    - type: regex
+      value: '\\*?Failure Message:\\*?\\s*Run UEFIdiag''s failed\\.'
+  action:
+    type: comment_only
+    close: false
+
+    testview:
+      testcase:
+        contains: "10_UEFIDIAG_EXTENDED"
+      testset: "SYS_POWER_OFF_TEST"
+      cases:
+        - when:
+            contains: "FAIL x8 16G"
+            source: "log_snippet"
+          select:
+            line_contains: "FAIL x8 16G"
+            line_before: 0
+            line_after: 1
+          comment_template: |
+            UEFIDIAG_EXTENDED log match: FAIL x8 16G
+
+            {testview_log_snippet_code}
+
+            [RB]
+
+        - when:
+            contains: "Diagnostics Test ABORTED"
+            source: "log_text"
+          select:
+            line_contains: "Diagnostics Test ABORTED"
+            line_before: 0
+            line_after: 1
+          comment_template: |
+            UEFIDIAG_EXTENDED log match: Diagnostics Test ABORTED
+
+            {testview_log_snippet_code}
+
+            Test, please send this server to repair.
+
+            [RB]
