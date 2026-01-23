@@ -375,6 +375,9 @@
     comment_template: |
       Starting PRETEST to reattempt PLM install (HOSTNIC_FW).
 
+      PRETEST validate (HTTP {slt_validate_status}):
+      {slt_validate_response_code}
+
       PRETEST start (HTTP {slt_start_status}):
 
 
@@ -406,6 +409,9 @@
     slt_use_validate: true
     comment_template: |
       Starting PRETEST to reattempt PLM install (snbench tool).
+
+      PRETEST validate (HTTP {slt_validate_status}):
+      {slt_validate_response_code}
 
       PRETEST start (HTTP {slt_start_status}):      
 
@@ -1170,8 +1176,6 @@
 
       Please reseat WIPE cables on both ends and check ROT cards for for bent pins/damage.
 
-      `'Boot fwid 2' not found in readSerial output.`
-
 
 - id: fan_module_rotating_too_slow_sys_fm_in_fmadm_comment
   name: "Fan module rotating too slowly + /SYS/FM in fmadm faulty -a"
@@ -1640,8 +1644,7 @@
       Please check if 1g cables and power supply connections are for the correct RU location. 
       
       If they were not plugged in properly, please reseat and retest. 
-
-      If everything looks ok and the cables are connected correctly, please move the server to a different location and retest..
+      If everything looks ok, please send to repair to check CPUs.
 
 
 - id: flash_firmware_slot_6100_failed_send_repair_reseat_hostnic

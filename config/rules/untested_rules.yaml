@@ -1,5 +1,5 @@
 
-
+###temp send to FA for pci link error
 - id: pcie_lnksta_check_not_pretest_release_retest_or_repair
   name: "PCIe link speed/width mismatch -> hostnic LnkSta (NOT PRETEST)"
   description: >
@@ -48,7 +48,10 @@
         stop_on_decision: true
 
         on_expect_fail_comment: |
-          Test, please send to FA for review.
+          Test, please send to repair.
+
+          Repair,
+          Host NIC PCIe link is downgraded OR LnkSta output is missing for one/more devices.
 
           Addresses checked (00.0 only):
           {pcie_addresses}
@@ -57,15 +60,20 @@
           {all_commands_code}
 
     comment_template: |
-      Please send to FA for review
-    
       PCIe LnkSta check looks OK on hostnic (no downgraded links and LnkSta output present for all addresses listed).
-
+    
+      Test, please send this server to FA for review.
+    
+      FA,
+      PCIe link speed/width mismatch is seen in GI vs system, but hostnic LnkSta output looks OK.
+      Please review and advise next action.
+    
       Addresses checked (00.0 only):
       {pcie_addresses}
-
+    
       Commands + output:
       {all_commands_code}
+
 
 
 

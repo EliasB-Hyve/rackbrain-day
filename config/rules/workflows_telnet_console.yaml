@@ -1,0 +1,232 @@
+# Workflow rules: Telnet console login check
+# Multi-step flow: run telnet locally -> ask for ROT cable reseat -> follow up after reassigned.
+# Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+
+- id: telnet_console_check_login_initial_pretest
+  name: "Telnet console check – initial ROT cable debug (PRETEST)"
+  description: >
+    For Fremont EVE tickets where the failure_message contains a telnet args
+    line like "args: ['/usr/bin/telnet', 'IP', 'PORT']", extract the command
+    (telnet IP PORT) and run it locally. On first run (no prior telnet
+    comment), if no login prompt is seen, instruct Test to reseat the ROT
+    serial cable and reassign the ticket after reseat.
+  allow_high_slt_attempts: true
+  allow_on_same_failure: true
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "args: ['/usr/bin/telnet'"
+    jira_comments_text:
+      not_contains: "connection may be stuck"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "args: ['/usr/bin/telnet'"
+  action:
+    type: "comment_only"
+    close: false
+    command_steps:
+      - id: "telnet_login_check_initial"
+        cmd: "{local} timeout 10 sh -c \"(sleep 1; printf \\\"\\n\\\"; sleep 8) | {telnet_cmd}\""
+        expect_contains: "login"
+        on_expect_pass_comment: |
+          Test, please retest this server {sn}.
+
+          I ran the telnet command and was able to reach a login prompt. The console path appears healthy.
+
+          Command:
+          {telnet_cmd}
+
+          Output:
+          {last_cmd_stdout_code}
+        on_expect_fail_comment: |
+          Test, please reseat the green ROT serial cable for server {sn} and reassign the ticket back to me.
+
+          I ran the telnet command from the ticket but did not see a login prompt within the timeout. The connection may be stuck or not responding properly.
+
+          Command:
+          {telnet_cmd}
+
+          Output / error:
+          {last_cmd_stdout_code}
+
+        stop_on_decision: true
+
+
+- id: telnet_console_check_login_after_reseat_pretest
+  name: "Telnet console check – after ROT cable reseat (PRETEST)"
+  description: >
+    For Fremont EVE tickets with a prior telnet initial debug
+    comment where the failure_message still contains
+    the telnet args line. Run the same telnet command again. If a login
+    prompt is seen, report that the console is now reachable. If not,
+    instruct Test to send the server to repair.
+  priority: 20
+  allow_high_slt_attempts: true
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "args: ['/usr/bin/telnet'"
+    jira_comments_text:
+      contains: "did not see a login prompt"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "args: ['/usr/bin/telnet'"
+  action:
+    type: "comment_only"
+    close: false
+    command_steps:
+      - id: "telnet_login_check_followup"
+        cmd: "{local} timeout 10 sh -c \"(sleep 1; printf \\\"\\n\\\"; sleep 8) | {telnet_cmd}\""
+        expect_contains: "login"
+        on_expect_pass_comment: |
+          Test, please retest this server {sn}.
+          
+
+          After ROT cable reseat, I ran the telnet command again and was able to reach a login prompt. The console path now appears healthy.
+
+          Command:
+          {telnet_cmd}
+
+          Output:
+          {last_cmd_stdout_code}
+        on_expect_fail_comment: |
+          Test, please send this server to repair to reseat ROT.
+
+          After ROT cable reseat, I re-ran the telnet command but still did not see a login prompt within the timeout. The console remains unreachable or stuck.
+
+          Command:
+          {telnet_cmd}
+
+          Output / error:
+          {last_cmd_stdout_code}
+        stop_on_decision: true
+
+
+- id: telnet_console_check_login_initial_not_pretest
+  name: "Telnet console check – initial ROT cable debug (NOT PRETEST)"
+  description: >
+    For Fremont EVE tickets where the failure_message contains a telnet args
+    line like "args: ['/usr/bin/telnet', 'IP', 'PORT']", extract the command
+    (telnet IP PORT) and run it locally. On first run (no prior telnet
+    comment), if no login prompt is seen, instruct Test to reseat the ROT
+    serial cable and reassign the ticket after reseat.
+  priority: 20
+  allow_high_slt_attempts: true
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "args: ['/usr/bin/telnet'"
+    jira_comments_text:
+      not_contains: "connection may be stuck"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+  patterns:
+    - type: contains
+      value: "args: ['/usr/bin/telnet'"
+  action:
+    type: "comment_only"
+    close: false
+    command_steps:
+      - id: "telnet_login_check_initial"
+        cmd: "{local} timeout 10 sh -c \"(sleep 1; printf \\\"\\n\\\"; sleep 8) | {telnet_cmd}\""
+        expect_contains: "login"
+        on_expect_pass_comment: |
+          Test, please retest this server {sn}.
+
+          I ran the telnet command and was able to reach a login prompt. The console path appears healthy.
+
+          Command:
+          {telnet_cmd}
+
+          Output:
+          {last_cmd_stdout_code}
+        on_expect_fail_comment: |
+          Test, please reseat the green ROT serial cable for server {sn} and reassign the ticket back to me.
+
+          I ran the telnet command from the ticket but did not see a login prompt within the timeout. The connection may be stuck or not responding properly.
+
+          Command:
+          {telnet_cmd}
+
+          Output / error:
+          {last_cmd_stdout_code}
+
+        stop_on_decision: true
+
+
+- id: telnet_console_check_login_after_reseat_not_pretest
+  name: "Telnet console check – after ROT cable reseat (NOT PRETEST)"
+  description: >
+    For Fremont EVE tickets with a prior telnet initial debug
+    comment where the failure_message still contains
+    the telnet args line. Run the same telnet command again. If a login
+    prompt is seen, report that the console is now reachable. If not,
+    instruct Test to send the server to repair.
+  priority: 20
+  allow_high_slt_attempts: true
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    failure_message:
+      contains: "args: ['/usr/bin/telnet'"
+    jira_comments_text:
+      contains: "did not see a login prompt"
+  patterns:
+    - type: contains
+      value: "args: ['/usr/bin/telnet'"
+  action:
+    type: "comment_only"
+    close: false
+    command_steps:
+      - id: "telnet_login_check_followup"
+        cmd: "{local} timeout 10 sh -c \"(sleep 1; printf \\\"\\n\\\"; sleep 8) | {telnet_cmd}\""
+        expect_contains: "login"
+        on_expect_pass_comment: |
+          Test, please retest this server {sn}.
+          Repair, please release for retest.
+             
+
+          After ROT cable reseat, I ran the telnet command again and was able to reach a login prompt. The console path now appears healthy.
+
+          Command:
+          {telnet_cmd}
+
+          Output:
+          {last_cmd_stdout_code}
+        on_expect_fail_comment: |
+          Test, please send this server to repair to reseat ROT.
+
+          After ROT cable reseat, I re-ran the telnet command but still did not see a login prompt within the timeout. The console remains unreachable or stuck.
+
+          Command:
+          {telnet_cmd}
+
+          Output / error:
+          {last_cmd_stdout_code}
+        stop_on_decision: true
+

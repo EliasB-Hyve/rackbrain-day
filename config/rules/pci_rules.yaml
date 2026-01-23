@@ -90,9 +90,8 @@
 - id: iou_bay_pcie_data_connector_missing_plain_english
   name: "IOU bay PCIe data connector missing in system (plain English)"
   description: >
-    When hwdiag_io_config reports an IOU Bay in system as MISSING, extract the *missing* IOU bay
-    (from the "in system: MISSING" line) and the expected (GI) slot, then state the issue in
-    plain English.
+    When hwdiag_io_config reports an IOU Bay in system as MISSING, extract the IOU bay and
+    expected (GI) slot and state the issue in plain English.
   priority: 25
   scope:
     arch: "EVE"
@@ -114,12 +113,6 @@
     text_extracts:
       - name: iou_bay
         source: failure_message
-        # Narrow to the hwdiag_io_config block for the bay that is MISSING in system.
-        # This avoids accidentally grabbing the first IOU Bay mentioned (e.g. a different bay
-        # with NO_PRESENT or other failures), and works whether "MISSING" is on the same line
-        # as the header or on the following line.
-        between_start_contains: "in GI:"
-        between_end_contains: "MISSING"
         line_contains: "hwdiag_io_config -> IOU Bay"
         line_between_start_contains: "IOU Bay "
         line_between_end_contains: " in GI"
@@ -128,10 +121,6 @@
 
       - name: gi_slot
         source: failure_message
-        # Prefer the connector list closest to the MISSING result (some hwdiag blocks
-        # show only IOU Module type and omit the connector list).
-        between_start_contains: "PCIe Data Connectors on IOU Module"
-        between_end_contains: "MISSING"
         line_contains: "PCIe Data Connectors on IOU Module: ['"
         line_between_start_contains: "['"
         line_between_end_contains: "'"
@@ -208,7 +197,7 @@
     When hwdiag_io_config shows IOU Bay connector mismatch between "in GI"
     (correct/expected) and "in system" (actual/wrong), extract the bay and
     connector numbers and state the mismatch in plain English.
-  priority: 35
+  priority: 20
   scope:
     arch: "EVE"
     jira_location:
@@ -222,12 +211,11 @@
       contains: "hwdiag_io_config -> IOU Bay"
     failure_message:
       contains: "hwdiag_io_config -> IOU Bay"
-      not_contains: "MISSING"
   patterns:
-    # Ensure this is truly a GI vs system mismatch for the same IOU bay
-    # (so we don't override the "Not Connected" rule unless config shows a mismatch).
-    - type: regex
-      value: 'hwdiag_io_config\s*->\s*IOU Bay\s*(\d+)\s*in GI:[\s\S]*?PCIe Data Connectors on IOU Module:\s*\[\s*''([0-9]{1,3})''[\s\S]*?hwdiag_io_config\s*->\s*IOU Bay\s*\1\s*in system:[\s\S]*?PCIe Data Connectors on IOU Module:\s*\[\s*''(?!\2'')([0-9]{1,3})'''
+    - type: contains
+      value: "hwdiag_io_config -> IOU Bay"
+    - type: not_contains
+      value: "Not Connected"
   action:
     type: comment_only
 
@@ -412,3 +400,118 @@
 
       Commands + output:
       {all_commands_code}
+      
+- id: eve_pci_link_error_ssd_reseat
+  name: "PCI link error on SSD -> capture fmadm Affects and send to repair"
+  description: >
+    For EVE servers where ILOM reports a PCI link error on an SSD FRU (e.g. /SYS/IOU8/SSD801).
+    Run faultmgmt "fmadm faulty -a" and surface the Affects line so repair can identify which SSD/IOU is impacted.
+    Ask repair to reseat the SSD module / backplane / IOU PCIe connections.
+
+  priority: 24
+  allow_high_slt_attempts: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    # usually not PRETEST-specific; keep it generic
+    # if you want only NOT PRETEST, uncomment:
+    # db_latest_failed_testset:
+    #   not_contains: "PRETEST"
+
+    # Make sure ILOM text exists (either in fetched ILOM or pasted into ticket)
+    combined_text:
+      contains: "A PCI link error has been detected on a PCI card."
+
+  patterns:
+    - type: contains
+      value: "A PCI link error has been detected on a PCI card."
+    # ensure it's SSD-related (match ILOM Open Problems line like "SSD801 (IOU 8 SSD 801)")
+    - type: regex
+      value: "(?i)\\bSSD\\s*\\d+\\b|/SYS/IOU\\d+/SSD\\d+"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "A PCI link error has been detected on a PCI card."
+
+    comment_template: |
+
+      Test, please send this server to repair.
+
+      Repair,
+
+      ILOM reports a PCI link error on an SSD (reduced link speed).
+      Please reseat the affected SSD module and its associated PCIe/backplane/IOU connections.
+      If issue persists, swap SSD with a known-good one to verify if fault follows the SSD.
+
+      fmadm faulty -a details (Affects line):
+      {command_fmadm_faulty_ssd_pcie_selected_lines_code}
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty_ssd_pcie"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        expect_contains: "Suspect"
+        # limit to the SSD affects line
+        line_contains: "Affects"
+        line_before: 0
+        line_after: 0
+        # optional: only keep lines that mention SSD/IOU in that affects line
+        # (if your command_steps supports an additional filter; if not, ignore)
+        stop_on_decision: false
+
+
+
+#==========================================================================================================================================================
+- id: eve_hwdiag_on_vr_check_all_nonzero_route_fallback
+  name: "EVE HWDIAG_ON: vr_check all non-zero (fallback matcher)"
+  priority: 80
+  allow_on_same_failure: true
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "hwdiag cpld vr_check all"
+  patterns:
+    - type: contains
+      value: "2_HWDIAG_ON"
+    - type: contains
+      value: "hwdiag cpld vr_check all"
+  action:
+    type: "comment_only"
+    close: false
+  
+    comment_template: |
+  
+      Test, please send to repair
+      
+      Repair,
+      HWDIAG_ON failed on `hwdiag cpld vr_check all` (non-zero).
+      Key output:
+      {command_vr_check_selected_lines_code}
+  
+    command_steps:
+      - id: "vr_check"
+        cmd: "{diag} hwdiag cpld vr_check all"
+        expect_status: 0
+        stop_on_decision: false
+  
+        # ???????????(??????? sshpass/ILOM banner)
+        line_contains: "Voltage Regulator Check Result"
+        line_before: 120
+        line_after: 20
+        line_only: false
+
+

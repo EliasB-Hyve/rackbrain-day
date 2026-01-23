@@ -1,0 +1,726 @@
+# =====================================================================
+# COMPREHENSIVE RACKBRAIN RULE TEMPLATE
+# =====================================================================
+# Copy this template when creating new rules. All available keywords
+# are shown with examples. Remove unused sections as needed.
+# =====================================================================
+
+- id: example_rule_id
+  name: "Example Rule Name"
+  description: >
+    Brief description of what this rule does and when it applies.
+  
+  # ===================================================================
+  # PRIORITY (optional, default: 0)
+  # ===================================================================
+  # Higher priority rules win when multiple rules match the same ticket.
+  # If priorities are equal, higher confidence wins.
+  # Use this to ensure specific rules take precedence over general ones.
+  priority: 10  # Optional: default is 0. Higher = more important
+
+  # ===================================================================
+  # SCOPE - Hard filters on structured fields (ErrorEvent.*)
+  # ===================================================================
+  # All scope conditions must pass or the rule is ignored.
+  # Available fields: arch, failure_message, model, testcase, failed_testset,
+  #                  jira_location, jira_customer, jira_slt_attempts,
+  #                  db_same_failure_count, db_latest_failed_testset, etc.
+  scope:
+    # Exact string match (case-insensitive)
+    arch: "EVE"
+    
+    # List: any-of exact matches
+    failed_testset:
+      - "AC_OFF_SP"
+      - "AC_ON_SP"
+    
+    # Dict: advanced matching
+    failure_message:
+      contains: "substring must be present"      # substring match (case-insensitive)
+      not_contains: "substring must NOT be present"  # must NOT contain
+      # regex: "pattern.*here"                  # optional: regex match
+    
+    model:
+      contains: "L40S"  # substring match
+    
+    jira_location:
+      contains: "Fremont"  # match Location custom field
+    
+    jira_customer:
+      contains: "EVE"  # match Customer custom field
+    
+    # jira_slt_attempts:
+    #   regex: "\\b[2-9][0-9]*\\b"  # example: SLT Attempts >= 2
+    
+    # db_same_failure_count: 3  # exact match (if you want to match specific count)
+    # db_latest_failed_testset: "RESET_FACTORY"  # exact match
+
+  # ===================================================================
+  # PATTERNS - Text match on Jira summary + description
+  # ===================================================================
+  # Used to score rules. Rule with highest (matched_patterns / total_patterns)
+  # wins (if >= min_confidence, default 0.75).
+  patterns:
+    # Substring match (case-insensitive)
+    - type: contains
+      value: "DIMM training failure"
+    
+    # Regex match (case-insensitive)
+    - type: regex
+      value: "SLT Attempts:\\s*([2-9][0-9]*)"
+
+  # ===================================================================
+  # ACTION - What RackBrain does after match
+  # ===================================================================
+  action:
+    # Action type (currently only "comment_only" is implemented)
+    type: "comment_only"  # Future: "retest", "close_ticket", "escalate"
+    close: false  # Reserved for future auto-close behavior
+    
+    # =================================================================
+    # ILOM COMPONENT FILTERING
+    # =================================================================
+    # Filter ILOM components to include in {ilom_components} placeholder
+    ilom_filter_contains:
+      - "DIMM training failure"
+      - "fault.ops.memory.amd.dimm_ce"
+    
+    # =================================================================
+    # COMMENT TEMPLATE
+    # =================================================================
+    # Jira comment body with {placeholders}. See placeholders section below.
+    comment_template: |
+      [rackbrain] Auto-analysis for {ticket_key} / {sn}
+      
+      Rule: {rule_id} – {rule_name}
+      Confidence: {confidence}
+      
+      Architecture: {arch}
+      Testcase: {testcase}
+      Error Details: {error_details}
+      
+      ILOM Components: {ilom_components}
+      
+      Last command (status={last_cmd_status}):
+      {last_cmd_selected_lines_code}
+      
+      All commands executed:
+      {all_commands_code}
+      
+      Commands summary:
+      {commands_summary}
+      
+      [RB]
+
+    # =================================================================
+    # COMMAND STEPS (optional)
+    # =================================================================
+    # Run diagnostics on the server via EVE.
+    # Each step can run a command, check expectations, and optionally
+    # override the comment_template.
+    command_steps:
+      - id: "ilom_check"  # Optional: unique ID for this command (auto-generated as "cmd_1" if not provided)
+        cmd: "{ilom} show System/Open_Problems"
+        # Contexts: {ilom}, {hostnic}, {diag}, {faultmgmt}, {local}
+        
+        # EXPECTATIONS (all optional)
+        expect_status: 0              # expected exit code (None = ignore)
+        expect_contains: "DIMM training failure"     # MUST appear in stdout
+        expect_not_contains: "Advanced Boot Loader"  # MUST NOT appear
+        
+        # CONDITIONAL EXECUTION (optional)
+        # Only run this step if previous command's stdout contains this
+        if_previous_contains: "some indicator"  # skip if not found in previous stdout
+        
+        # STDOUT SELECTION (optional)
+        # Option 1: Anchor + context lines (or ONLY matching lines)
+        line_contains: "Affects"      # anchor line
+        line_before: 0                # include N lines before anchor
+        line_after: 0                 # include N lines after anchor
+        line_only: false              # If true, return ONLY matching lines (no context)
+        
+        # Option 2: Select span between two markers
+        # between_start_contains: "START_MARKER"
+        # between_end_contains: "END_MARKER"
+        
+        # DECISION HANDLING (optional)
+        on_expect_pass_comment: ""    # if set, overrides comment_template when expectations pass
+        on_expect_fail_comment: ""    # override when expectations fail
+        stop_on_decision: true        # if a pass/fail comment is set, stop further steps
+      
+      - id: "faultmgmt_check"  # Optional: user-defined ID
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        expect_contains: "Suspect 1 of 1"
+        line_contains: "Affects"
+        line_only: true  # Return ONLY lines containing "Affects" (no context)
+        # This step will only run if previous step's stdout contains "some indicator"
+        if_previous_contains: "some indicator"
+        stop_on_decision: false  # continue to next step even if comment is set
+      
+      # Example: command without explicit ID (will be auto-generated as "cmd_3")
+      - cmd: "{diag} hwdiag io config"
+        line_contains: "PCI"
+        line_only: true  # Only matching lines, no context
+    
+    # =================================================================
+    # FAILURE MESSAGE SLICING (optional)
+    # =================================================================
+    # Extract part of the DB failure_message for {failure_message_selected[_code]}
+    # Option 1: Select span between two markers
+    failure_message_between_start_contains: "in GI"
+    failure_message_between_end_contains: "in system"
+    
+    # Option 2: Select lines around anchor
+    # failure_message_line_contains: "is_bifurcated"
+    # failure_message_line_before: 3
+    # failure_message_line_after: 2
+    
+    # =================================================================
+    # TESTVIEW LOG SELECTION (optional)
+    # =================================================================
+    # If testview_testcase_contains is set, RackBrain will:
+    #   - find the latest SLT run for this SN
+    #   - choose the testcase whose name contains this substring
+    #   - download its TestView log
+    #   - slice the log using the selectors below
+    testview_testcase_contains: "5_PROGRAM_SYSTEM_RECORD"
+    testview_testset: "RESET_FACTORY"  # optional override (else use latest failed_testset)
+    
+    # Option 1: Select span between two markers
+    testview_between_start_contains: "Error: Connector value"
+    testview_between_end_contains: "SP      Aspeed Revis"
+    
+    # Option 2: Select lines around anchor
+    # testview_line_contains: "error occurred"
+    # testview_line_before: 5
+    # testview_line_after: 10
+
+    # -----------------------------------------------------------------
+    # NEW (preferred): TestView conditional comments (first match wins)
+    # -----------------------------------------------------------------
+    # This nested shape avoids duplicating "testview_*" keys and lets you
+    # choose the comment based on what the TestView log/snippet contains.
+    #
+    # testview:
+    #   testcase:
+    #     contains: "5_PROGRAM_SYSTEM_RECORD"
+    #   testset: "RESET_FACTORY"
+    #   select:
+    #     between_start_contains: "Error: Connector value"
+    #     between_end_contains: "SP      Aspeed Revis"
+    #   cases:
+    #     - when:
+    #         contains: "Known signature A"
+    #         source: "auto"          # default; or: "log_snippet" / "log_text"
+    #       select:
+    #         line_contains: "Known signature A"
+    #         line_before: 0
+    #         line_after: 2
+    #       comment_template: |
+    #         Found signature A in TestView.
+    #
+    #     - when:
+    #         regex: "SignatureB:\\s*[0-9]+"
+    #         source: "log_text"
+    #       comment_template: |
+    #         Found signature B in full TestView log.
+
+# =====================================================================
+# AVAILABLE TEMPLATE PLACEHOLDERS
+# =====================================================================
+# Use these {placeholders} in comment_template:
+#
+# Basic Info:
+#   {ticket_key}        - Jira issue key (e.g. MFGS-445645)
+#   {sn}                - Server serial number
+#   {rule_id}           - Rule id from YAML
+#   {rule_name}         - Human-readable rule name
+#   {confidence}        - Match score (0.00–1.00)
+#
+# Context:
+#   {arch}              - Architecture (e.g. EVE)
+#   {testcase}          - Current testcase (e.g. 3_CHECK_...)
+#   {error_details}     - Combined failure detail string
+#   {ilom_components}   - Component names from ILOM Open_Problems
+#
+# EVEBOT / Jira Meta:
+#   {evbot_version}             - EVEBOT Version from ticket body
+#   {jira_model}                - Model from ticket
+#   {jira_customer_ipn}         - Customer IPN
+#   {jira_slt_rack_sn}          - SLT rack SN
+#   {jira_tester_email}         - Tester email
+#   {jira_test_started}         - Test start time
+#   {jira_test_finished}        - Test finish time
+#   {jira_test_duration_minutes} - Duration in minutes
+#   {jira_customer}             - Jira Customer field (e.g. EVE)
+#   {jira_location}             - Jira Location field (e.g. Fremont)
+#
+# Last Command (from command_steps):
+#   {last_cmd_context}          - Which endpoint (ilom/host/faultmgmt/local)
+#   {last_cmd}                  - Full command string
+#   {last_cmd_status}           - Exit code
+#   {last_cmd_stdout}           - Raw stdout (possibly truncated)
+#   {last_cmd_selected_lines}   - Selected subset of stdout
+#   {last_cmd_stdout_code}      - Same as last_cmd_stdout, wrapped in Jira {code}
+#   {last_cmd_selected_lines_code} - Selected lines wrapped in Jira {code}
+#
+# Command History (all commands executed):
+#   {all_commands_code}         - All commands in chronological order, wrapped in {code}
+#   {commands_summary}          - Table summary of all commands
+#   {command_count}            - Number of commands executed
+#
+# Per-Command Placeholders (by command ID):
+#   Each command gets a unique ID (either user-defined via 'id:' or auto-generated as "cmd_1", "cmd_2", etc.)
+#   Use these to reference specific commands in your template:
+#
+#   {command_cmd_1_stdout}              - Full stdout of first command (auto-generated ID)
+#   {command_cmd_1_stdout_code}         - Same, wrapped in Jira {code}
+#   {command_cmd_1_selected_lines}      - Selected lines from first command
+#   {command_cmd_1_selected_lines_code} - Selected lines wrapped in Jira {code}
+#   {command_cmd_1_context}             - Context of first command (e.g., "ilom")
+#   {command_cmd_1_cmd}                 - Command string of first command
+#   {command_cmd_1_status}              - Exit status of first command
+#   {command_cmd_1_info}                - Combined info: "ilom show System (status=0)"
+#
+#   If you use user-defined IDs (e.g., id: "ilom_check"):
+#   {command_ilom_check_stdout}         - Full stdout of command with id="ilom_check"
+#   {command_ilom_check_selected_lines_code} - Selected lines from "ilom_check" command
+#   {command_ilom_check_info}           - Combined info for "ilom_check" command
+#
+#   Examples:
+#     - {command_cmd_1_stdout_code} - Output from first command
+#     - {command_cmd_2_selected_lines_code} - Selected lines from second command
+#     - {command_ilom_check_stdout_code} - Output from command with id="ilom_check"
+#
+# ILOM Open_Problems:
+#   {ilom_open_problems_raw}    - Raw "show System/Open_Problems" output
+#   {ilom_open_problems_code}   - Same, wrapped in Jira {code}
+#
+# Failure Message Slicing:
+#   {failure_message_selected}       - Selected lines from DB failure_message
+#   {failure_message_selected_code}  - Same, wrapped in Jira {code}
+#
+# DB / TestView:
+#   {db_failed_testcase}         - Raw testErrorCode string
+#   {db_failed_testcase_list}    - Comma-separated list of testcases
+#   {db_same_failure_count}      - How many same failures in a row
+#   {db_latest_slt_id}           - Latest ServerStatus.id (slt_id)
+#   {db_latest_failed_testset}   - Latest associatedTestSetName
+#   {testview_log_snippet}        - Selected TestView log snippet
+#   {testview_log_snippet_code}  - Same, wrapped in Jira {code}
+#
+# =====================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+- id: eve_power_source_failed_reseat_pcie
+  name: "EVE power source failed, reseat PCIe IOU"
+  description: >
+    When fmadm reports 'A power source has failed or is not available to the
+    server', show System/Open_Problems, extract the PCI Devices line, and
+    instruct tester to send to repair to reseat connections for that component.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+
+  patterns:
+    # This text comes from the Failure Message / Description section in Jira
+    # for tickets like MFGS-445249.:contentReference[oaicite:0]{index=0}
+    - type: contains
+      value: "A power source has failed or is not available to the server"
+
+  action:
+    type: comment_only
+    close: false
+
+    command_steps:
+      - cmd: "{ilom} show System/Open_Problems"
+
+        # We don’t care about exit status here; we just want the text.
+        # (No expect_status / expect_contains needed.)
+
+        # Line selection: grab the PCI Devices summary line only.
+        line_contains: "PCI Devices"
+        line_before: 0
+        line_after: 0
+
+        on_expect_pass_comment: |
+
+          Please send to repair to reseat connections for failing component:
+
+          {last_cmd_selected_lines_code}
+
+
+          "{last_cmd_context} : {last_cmd}" on {sn}.
+
+          {last_cmd_stdout_code}
+
+          [RB] 
+
+
+
+        # If something weird happens (no output, or expectations added later),
+        # fall back to raw stdout:
+        # on_expect_fail_comment: |
+        #   [RB] Ran "{last_cmd_context} {last_cmd}" on {sn}, but could not
+        #   extract the expected PCI Devices line from System/Open_Problems.
+        #   Raw output:
+        #   {last_cmd_stdout_code}
+
+        stop_on_decision: true
+
+
+
+
+
+
+
+- id: bifurcated_mismatch
+  name: "bifurcated FW / cabling mismatch"
+  description: >
+    Fremont EVE servers where HOSTNIC PCIe bifurcation in GI vs system
+    does not match (is_bifurcated: bifurcated).
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+    failure_message:
+      contains: "is_bifurcated: bifurcated"
+
+  patterns:
+    - type: contains
+      value: "does not correspond to GI."
+
+  action:
+    type: "comment_only"
+
+    # NEW: tell RackBrain what slice of failure_message you want
+    failure_message_between_start_contains: "GI"
+    failure_message_between_end_contains: "is_bifurcated: bifurcated"
+
+    # failure_message_line_contains: "is_bifurcated"
+    # failure_message_line_before: 5   # up to 5 lines above
+    # failure_message_line_after: 3    # 3 lines below
+
+    command_steps:
+      - cmd: "{hostnic} echo --- A1 --- ; lspci -vvv -s a1:00.0 | grep -i LnkSta ; \ echo --- 61 --- ; lspci -vvv -s 61:00.0 | grep -i LnkSta"
+        expect_status: 0
+        stop_on_decision: false
+
+    comment_template: |
+      Test, please send to repair.
+
+      Repair, please reseat PCI connections for failing component:
+      
+      {failure_message_selected_code}
+
+      {last_cmd_stdout_code}
+      [RB]
+
+
+
+
+
+- id: ilom_pci_link_error_affects
+  name: "PCI link error – capture fmadm Affects line"
+  description: >
+    Fremont EVE servers where ILOM reports a PCI link error on a PCI card.
+    Run faultmgmt "fmadm faulty -a" and surface the Affects line for the
+    suspect FRU.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+
+  patterns:
+    - type: contains
+      value: "A PCI link error has been detected on a PCI card."
+
+  action:
+    type: "comment_only"
+
+    command_steps:
+      - cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        expect_contains: "Suspect 1 of 1"
+        # Pick only the line(s) with "Affects"
+        line_contains: "Affects"
+        line_before: 0
+        line_after: 0
+        # We don't want this step to override the template, just enrich it
+        stop_on_decision: false
+
+    comment_template: |
+      Test, please send to repair.
+
+      Repair,
+      
+      There is a PCI link error on a PCI card. Please reseat the module and its associated connections
+
+      {last_cmd_selected_lines_code}
+      {ilom_open_problems_code}
+      [RB]
+
+
+
+
+- id: eve_ilom_console_reconnect
+  name: "EVE ILOM console reconnect check"
+  description: >
+    Fremont EVE servers where failure_message says 'Failed to connect ILOM console.'.
+    RackBrain will try an ILOM command; if it succeeds, we show proof, otherwise
+    we show the error.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+    # jira_slt_attempts: "1"
+    failure_message:
+      contains: "Failed to connect ILOM console."
+
+  # patterns just reinforce the match on the Jira text
+  patterns:
+    - type: contains
+      value: "Failed to connect ILOM console."
+
+  action:
+    type: "comment_only"
+
+    # We don't need a static comment_template; command_steps will override it
+    # via on_expect_pass_comment / on_expect_fail_comment.
+
+    command_steps:
+      - cmd: "{ilom} show /System"
+        expect_status: 0
+        # if you want to trim output, you can optionally use:
+        # line_contains: "/System"
+        # line_before: 0
+        # line_after: 10
+
+        on_expect_pass_comment: |
+          Test, please rerun pretest.
+
+          I was able to connect to ILOM despite server failing for error:
+        
+          "Failed to connect ILOM console."
+
+          ILOM command run:
+          {last_cmd}
+
+
+          Sample output:
+          {last_cmd_stdout_code}
+          [RB]
+        on_expect_fail_comment: |
+          Test, please reseat the NET/MGT cable and check if ILOM is pingable after 5 minutes.
+
+          If still not pingable, run SLT to generate logs for repair
+
+          If pingable, please rerun pretest.
+
+          I was not able to manually connect to ILOM 
+          [RB]
+
+        stop_on_decision: true
+
+
+
+- id: hwdiag_i2c_access_failed
+  name: "hwdiag i2c i2c access failures"
+  description: >
+    Fremont EVE tickets where 'hwdiag i2c test all -v' exited non-zero.
+    Re-run the command via diag shell and surface all lines containing
+    'Access failed' from the output.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+
+  patterns:
+    - type: contains
+      value: "command 'hwdiag i2c test all -v' executed, exited with non-zero return code"
+
+  action:
+    type: "comment_only"
+
+    command_steps:
+      - cmd: "{diag} hwdiag i2c test all -v"
+        # We expect this can still be non-zero; don't enforce expect_status
+        line_contains: "Access failed"
+        line_before: 0
+        line_after: 0
+        stop_on_decision: false
+
+    comment_template: |
+      Test, please send server to repair.
+
+      Repair,
+      Please reset CMOS battery and run FA
+
+      "hwdiag i2c test all -v" previously exited with non-zero return code.
+
+      A fresh run was executed to capture any i2c access failures.
+
+      command hwdiag i2c output:
+      {last_cmd_selected_lines_code}
+      [RB]
+
+
+
+
+
+
+
+- id: eve.hostnic.flash_fail.slt1
+  name: "EVE HOSTNIC flash fail on first SLT attempt(pretest)"
+  description: >
+    Matches when a HOSTNIC firmware flash failure occurs AND SLT Attempts = 1.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+    failure_message:
+      contains: "flash firmware to slot: 61:00.0 failed with non-zero exitcode."
+    jira_slt_attempts: "1"
+
+  patterns:
+    - type: contains
+      value: "flash firmware to slot: 61:00.0 failed with non-zero exitcode."
+
+  action:
+    type: comment_only
+    comment_template: |
+      Server failed pretest due to HOSTNIC firmware not being updated. 
+      Please reseat HOSTNIC cabling and retest the server to update hostnic firmware.
+
+      [RB]
+
+
+
+
+
+- id: eve_reset_factory_program_system_record_connector_value
+  name: "EVE: RESET_FACTORY 5_PROGRAM_SYSTEM_RECORD connector value log snippet"
+  description: >
+    When RESET_FACTORY fails on 5_PROGRAM_SYSTEM_RECORD, include the section
+    of the TestView log between 'Error: Connector value' and 'SP Aspeed Revision'
+    in the Jira comment.
+
+  scope:
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    arch: "EVE"
+    failed_testset: "RESET_FACTORY"
+
+  # Make sure we’re really on the PROGRAM_SYSTEM_RECORD failure
+  patterns:
+    - type: contains
+      value: "5_PROGRAM_SYSTEM_RECORD"     # from 'Failed Testcase' line
+    - type: contains
+      value: "hwdiag system info executed failed after SP reset."  # failure message from the ticket
+
+  action:
+    type: "comment_only"
+    close: false
+
+    # --- NEW TestView log selection ---
+    # Pick the testcase within the latest SLT run
+    testview_testcase_contains: "5_PROGRAM_SYSTEM_RECORD"
+    # Explicitly say which testset in TestView to pull from
+    testview_testset: "RESET_FACTORY"
+
+    # From that log, take everything between these two markers:
+    testview_between_start_contains: "Error: Connector value"
+    testview_between_end_contains: "SP      Aspeed Revis"
+
+    comment_template: |
+      RESET_FACTORY failed on 5_PROGRAM_SYSTEM_RECORD.
+
+      SLT run details:
+      - Failed testset (DB): {db_latest_failed_testset}
+      - Failed testcases (DB): {db_failed_testcase_list}
+      - Same failure count (sequential): {db_same_failure_count}
+
+      Relevant section of the TestView log (between "Error: Connector value"
+      and "SP Aspeed Revision"):
+      {testview_log_snippet_code}
+
+
+
+
+
+
+
+
