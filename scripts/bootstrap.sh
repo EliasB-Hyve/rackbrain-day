@@ -6,7 +6,34 @@
 # - Installs requirements.txt
 # - Ensures a local config exists (copies config.example on first run)
 #
-set -euo pipefail
+set -euo
+set -o pipefail
+
+
+# ------------------------------------------------------------
+# Self-heal: fix CRLF line endings if files were copied from Windows
+# (e.g., drag-and-drop via MobaXterm / SCP outside Git)
+# ------------------------------------------------------------
+
+ROOT_SELF_HEAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# If THIS script has CRLF, fix it in-place (bash can still run it)
+if grep -q $'\r' "$0"; then
+  echo "Detected CRLF in bootstrap.sh — converting to LF"
+  sed -i 's/\r$//' "$0"
+fi
+
+# Fix common text files in the repo (safe + fast)
+find "$ROOT_SELF_HEAL" \
+  -type f \( \
+    -name "*.sh" \
+    -o -name "*.py" \
+    -o -name "*.yaml" \
+    -o -name "*.yml" \
+    -o -name "*.md" \
+  \) \
+  -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
