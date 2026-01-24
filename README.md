@@ -36,7 +36,8 @@ export RACKBRAIN_STATE_DIR="$HOME/.local/state/rackbrain"
 export RACKBRAIN_LOG_DIR="$RACKBRAIN_STATE_DIR/logs"
 export RACKBRAIN_TIMER_DB_PATH="$RACKBRAIN_STATE_DIR/rackbrain_state.sqlite"
 ```
-
+How to get testview cookie(copy the entire block of text next to "Cookie")
+<img width="540" height="400" alt="image" src="https://github.com/user-attachments/assets/f863c5b5-4512-4e25-9e32-7b2b6313d91f" />
 # ----------------------------
 # Convenience: enter project + activate venv
 # ----------------------------
