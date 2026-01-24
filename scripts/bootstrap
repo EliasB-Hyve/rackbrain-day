@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo
+
+set -o pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REAL_BOOT="$ROOT_DIR/scripts/bootstrap.sh"
+
+fix_file() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  sed -i 's/\r$//' "$f" 2>/dev/null || true
+}
+
+# Always fix the real bootstrap first
+fix_file "$REAL_BOOT"
+
+# Fix common text files if copied from Windows
+find "$ROOT_DIR" -type f \( \
+  -name "*.sh" -o -name "*.py" -o -name "*.yaml" -o -name "*.yml" -o -name "*.md" \
+\) -print0 | while IFS= read -r -d '' f; do
+  fix_file "$f"
+done
+
+exec /usr/bin/bash "$REAL_BOOT" "$@"
