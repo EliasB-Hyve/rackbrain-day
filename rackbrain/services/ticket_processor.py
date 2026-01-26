@@ -17,7 +17,7 @@ from rackbrain.services.testview_actions import (
     select_testview_case_template,
 )
 
-MAX_SLT_ATTEMPTS = 7
+MAX_SLT_ATTEMPTS = 12
 
 
 # ----------------------------
@@ -701,52 +701,78 @@ def process_ticket(
         actions_taken["commented"] = False
         actions_taken["comment_error"] = str(exc)
 
-    # 3.5) If rule requests close, close NOW and STOP (no final assign)
+    # 3.5) If rule requests close, close ONLY IF SLT started successfully
     want_close = bool(getattr(action, "close", False))
     if want_close:
+        # Accept "200"/200/"201"/201...
+        start_status = getattr(error_event, "slt_start_status", None)
+        start_ok = False
         try:
-            closed_ok, detail = _maybe_close_issue(
-                jira,
-                issue_key,
-                transition_comment="RackBrain auto-close: SLT started per rule; closing ticket.",
+            start_ok = int(str(start_status).strip()) in (200, 201, 202)
+        except Exception:
+            start_ok = False
+    
+        if not start_ok and getattr(action, "start_slt", False):
+            # SLT was requested but did not start -> DO NOT close
+            print(f"[WARN] Close requested but SLT start not successful: slt_start_status={start_status}")
+    
+            # Post an extra comment (optional but recommended)
+            extra = (
+                "RackBrain notice:\n"
+                f"- SLT was requested by rule but TestView start failed.\n"
+                f"- slt_start_status={getattr(error_event,'slt_start_status',None)}\n"
+                f"- slt_start_response={getattr(error_event,'slt_start_response','')}\n"
+                "Please re-login/refresh TestView token on this host and retry.\n"
             )
-            actions_taken["closed"] = closed_ok
-            actions_taken["closed_detail"] = detail
+            try:
+                jira.add_comment(issue_key, extra)
+                actions_taken["commented_slt_start_failed"] = True
+            except Exception as exc:
+                actions_taken["commented_slt_start_failed"] = f"FAILED: {exc}"
+    
+            # Keep ticket open; continue to final assign
+        else:
+            # OK to close
+            try:
+                closed_ok, detail = _maybe_close_issue(
+                    jira,
+                    issue_key,
+                    transition_comment="RackBrain auto-close: SLT started per rule; closing ticket.",
+                )
+                actions_taken["closed"] = closed_ok
+                actions_taken["closed_detail"] = detail
+    
+                if closed_ok:
+                    print(f"[OK] Closed {issue_key}: {detail}")
+                    # stop here — do NOT random assign after closing
+                    logger = get_logger()
+                    if logger:
+                        logger.log_processed(
+                            issue_key=issue_key,
+                            rule_id=match.rule.id,
+                            rule_name=match.rule.name,
+                            confidence=match.confidence,
+                            success=True,
+                            dry_run=False,
+                            actions_taken=actions_taken,
+                        )
+                    return {
+                        "issue_key": issue_key,
+                        "match": True,
+                        "rule_id": match.rule.id,
+                        "rule_name": match.rule.name,
+                        "confidence": match.confidence,
+                        "edited": True,
+                        "dry_run": False,
+                        "actions_taken": actions_taken,
+                    }
+                else:
+                    print(f"[WARN] Close requested but failed for {issue_key}: {detail}")
+            except Exception as exc:
+                actions_taken["closed"] = False
+                actions_taken["closed_detail"] = f"FAILED: {exc}"
+                print(f"[WARN] Close requested but exception for {issue_key}: {exc}")
 
-            if closed_ok:
-                print(f"[OK] Closed {issue_key}: {detail}")
-
-                logger = get_logger()
-                if logger:
-                    logger.log_processed(
-                        issue_key=issue_key,
-                        rule_id=match.rule.id,
-                        rule_name=match.rule.name,
-                        confidence=match.confidence,
-                        success=True,
-                        dry_run=False,
-                        actions_taken=actions_taken,
-                    )
-
-                return {
-                    "issue_key": issue_key,
-                    "match": True,
-                    "rule_id": match.rule.id,
-                    "rule_name": match.rule.name,
-                    "confidence": match.confidence,
-                    "edited": True,
-                    "dry_run": False,
-                    "actions_taken": actions_taken,
-                }
-            else:
-                print(f"[WARN] Close requested but failed for {issue_key}: {detail}")
-
-        except Exception as exc:
-            actions_taken["closed"] = False
-            actions_taken["closed_detail"] = f"FAILED: {exc}"
-            print(f"[WARN] Close requested but exception for {issue_key}: {exc}")
-
-        # If close requested but failed, continue to final assign
 
     # 4) Final assign LAST (only if not closed)
     try:

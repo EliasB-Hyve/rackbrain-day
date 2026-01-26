@@ -136,9 +136,29 @@ def classify_error(
             continue
 
         matched: List[Any] = []
+        def _get_text_for_pattern(error_event: ErrorEvent, pattern: Any) -> str:
+            """
+            Return the text haystack for this pattern.
+            Backward compatible: default to error_event.combined_text.
+            Supports dotted paths like 'ticket.summary' if the attribute chain exists.
+            """
+            source = getattr(pattern, "source", None) or "combined_text"
+        
+            cur: Any = error_event
+            for part in str(source).split("."):
+                cur = getattr(cur, part, "")
+                if cur is None:
+                    return ""
+            return str(cur) if not isinstance(cur, str) else cur
+        
+        
+        # ... inside classify_error loop:
+        matched: List[Any] = []
         for p in rule.patterns:
-            if pattern_matches_text(p, error_event.combined_text):
+            haystack = _get_text_for_pattern(error_event, p)
+            if pattern_matches_text(p, haystack):
                 matched.append(p)
+        
 
         if not matched:
             continue

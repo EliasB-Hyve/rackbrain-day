@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import field
+from typing import Optional
 
 
 @dataclass
@@ -132,7 +133,7 @@ class RulePattern:
     """
     type: str
     value: str
-
+    source: Optional[str] = None   # NEW: where to read text from (default combined_text)
 
 @dataclass
 class RuleCommandStep:

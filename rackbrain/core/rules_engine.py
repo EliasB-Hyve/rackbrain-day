@@ -11,7 +11,11 @@ from rackbrain.core.models import Rule, RuleAction, RulePattern, RuleCommandStep
 
 def _load_rule_from_dict(data: dict) -> Rule:
     patterns = [
-        RulePattern(type=p["type"], value=p["value"])
+        RulePattern(
+            type=p.get("type"),
+            value=p.get("value"),
+            source=p.get("source"),   # NEW
+        )
         for p in data.get("patterns", [])
     ]
 

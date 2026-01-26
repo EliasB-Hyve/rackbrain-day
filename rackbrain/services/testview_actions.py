@@ -11,6 +11,10 @@ def maybe_start_slt_for_action(error_event, action, dry_run: bool) -> None:
     Priority:
       1) Conditional trigger set by a command_step (ErrorEvent.testview_start_requested)
       2) Unconditional action.start_slt (existing behavior)
+
+    Enhancements:
+      - Always print debug summary of validate/start status (non-dry-run).
+      - Treat non-successful start as a failure signal (templates can show status/response).
     """
     sn = getattr(error_event, "sn", None)
     if not sn:
@@ -29,9 +33,11 @@ def maybe_start_slt_for_action(error_event, action, dry_run: bool) -> None:
     else:
         return
 
+    # DRY RUN: do not call TestView; still populate template fields
     if dry_run:
-        print(f"[DRY-RUN] Would start TestView operation={operation} for SN={sn}")
-        # Optional: fill fields so templates aren't blank in dry runs
+        print(f"[DRY-RUN] Would start TestView operation={operation} for SN={sn} (validate={use_validate})")
+        error_event.slt_validate_status = "DRY_RUN"
+        error_event.slt_validate_response = f"DRY RUN - would validate={use_validate}"
         error_event.slt_start_status = "DRY_RUN"
         error_event.slt_start_response = f"DRY RUN - would start {operation} for {sn}"
         return
@@ -41,9 +47,11 @@ def maybe_start_slt_for_action(error_event, action, dry_run: bool) -> None:
             sn=sn,
             operation=operation,
             do_validate=use_validate,
-        )
+        ) or {}
     except Exception as exc:
         print(f"[WARN] Failed to start TestView {operation} for {sn}: {exc}")
+        error_event.slt_validate_status = None
+        error_event.slt_validate_response = None
         error_event.slt_start_status = None
         error_event.slt_start_response = f"Exception: {exc}"
         return
@@ -53,6 +61,22 @@ def maybe_start_slt_for_action(error_event, action, dry_run: bool) -> None:
     error_event.slt_validate_response = res.get("validate_text")
     error_event.slt_start_status = res.get("start_status")
     error_event.slt_start_response = res.get("start_text")
+
+    # Always show what happened (this is what you were missing)
+    print(
+        f"[DEBUG] TestView validate/start result for SN={sn} op={operation} validate={use_validate}: "
+        f"validate_status={error_event.slt_validate_status}, start_status={error_event.slt_start_status}"
+    )
+
+    # Optional: add a warning when start is not successful.
+    # (Do NOT raise exception; just make it visible.)
+    ok_statuses = {"200", "201", "202"}
+    start_status_str = "" if error_event.slt_start_status is None else str(error_event.slt_start_status).strip()
+    if start_status_str and start_status_str not in ok_statuses:
+        print(
+            f"[WARN] TestView start not successful for SN={sn} op={operation}: "
+            f"start_status={error_event.slt_start_status} start_text={error_event.slt_start_response}"
+        )
 
 
 def populate_testview_log_for_action(error_event, action):
