@@ -572,19 +572,17 @@
       - "The Platform Security Processor"
 
     comment_template: |
-
-      DIMM training failure detected on PRETEST; starting SLT now to generate logs.
-
+    
+      DIMM training failure detected on PRETEST; requesting SLT start to generate logs.
+    
       Test,
-      SLT has been started. No further PRETEST retry is needed for this failure.
-
-      Closing this ticket after SLT start.
-
-      Key fault:
-      - fault.memory.amd.dimm.training.failure
-
+      TestView start status: {slt_start_status}
+    
+      {slt_start_response}
+    
       ILOM Open Problems:
       {ilom_open_problems_code}
+
         
         
 

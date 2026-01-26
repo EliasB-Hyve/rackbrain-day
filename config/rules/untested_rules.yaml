@@ -62,21 +62,17 @@
     comment_template: |
       PCIe LnkSta check looks OK on hostnic (no downgraded links and LnkSta output present for all addresses listed).
     
-      Test, please send this server to FA for review.
+      Test, please retest the server.
     
-      FA,
+      Repair,
       PCIe link speed/width mismatch is seen in GI vs system, but hostnic LnkSta output looks OK.
-      Please review and advise next action.
+      Please release for retest
     
       Addresses checked (00.0 only):
       {pcie_addresses}
     
       Commands + output:
       {all_commands_code}
-
-
-
-
 
 
 
