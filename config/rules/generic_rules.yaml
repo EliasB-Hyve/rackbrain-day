@@ -22,7 +22,7 @@
   #     not_contains: "PRETEST"
 
   #   # Latest failing testcase list / code (examples Ã¢â‚¬â€œ leave commented if not needed)
-  #   # db_failed_testcase:
+  #   # 
   #   #   contains: "12_CHECK_ILOM_FAULT"
   #   # db_failed_testcase_list:
   #   #   contains: "12_CHECK_ILOM_FAULT"
@@ -180,9 +180,10 @@
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
-    db_latest_failed_testset: "TEST_ENV_CHECK"
-    db_failed_testcase:
-      contains: "2_SETUP_VTS_ENV"
+    db_latest_failed_testset:
+      contains: "TEST_ENV_CHECK"
+    db_failed_testcase:  
+      contains: "SETUP_VTS_ENV"
   patterns:
     - type: contains
       value: 'VTS will not run if "Secure Boot" is enabled in BIOS'
@@ -394,13 +395,18 @@
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
-    db_latest_failed_testset:
-      contains: "PRETEST"
-    failure_message:
-      contains: "Failed to install snbench tool from PLM"
+  
+    # more reliable as exact match
+    db_latest_failed_testset: "PRETEST"
+  
+    # cover 6/7/etc
     db_failed_testcase:
-      contains: "7_UPDATE_HOSTNIC_FW_REMOTE"
-
+      contains: "UPDATE_HOSTNIC_FW_REMOTE"
+  
+    # strongest guardrail: must appear in the ticket text
+    combined_text:
+      contains: "Failed to install snbench tool from PLM"
+  
     # Never run again if already ran #1
     jira_comments_text:
       not_contains: "PRETEST rerun (snbench/PLM) #1"
@@ -440,8 +446,8 @@
       contains: "EVE"
     db_latest_failed_testset:
       not_contains: "PRETEST"
-    db_failed_testcase:
-      contains: "1_CHECK_ROT_MAC"
+    
+      contains: "CHECK_ROT_MAC"
     failure_message:
       contains: "ROT MAC"
   patterns:
@@ -1648,7 +1654,7 @@
       Please check if 1g cables and power supply connections are for the correct RU location. 
       
       If they were not plugged in properly, please reseat and retest. 
-      If everything looks ok, please send to repair to check CPUs.
+      If everything looks ok, please assign back to TE for verify
 
 
 - id: flash_firmware_slot_6100_failed_send_repair_reseat_hostnic
@@ -1731,3 +1737,276 @@
       {{code}}
       {hostnic_vid_did_failure_block}
       {{code}}
+      
+#################################################################################################################################################      
+- id: fault_chassis_fan_capacity_insufficient_power_on_failed
+  name: "fault.chassis.config.fan.capacity-insufficient – blocks power on"
+  description: >
+    For EVE Fremont servers where ILOM/fmadm reports insufficient cooling capacity
+    due to missing/faulted fans (fault.chassis.config.fan.capacity-insufficient).
+    This can present as power on failed / prevents power on, even if failed testcase
+    is 5_CHECK_DIMM_AMT. Run "fmadm faulty -a" and show lines containing "Affects".
+  priority: 15
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    ilom_open_problems_raw:
+      contains: "cooling"
+  patterns:
+    - type: contains
+      value: "fault.chassis.config.fan.capacity-insufficient"
+    - type: contains
+      value: "Insufficient cooling capacity"
+    - type: contains
+      value: "missing fans"
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "Insufficient cooling capacity"
+      - "fan"
+      - "fault.chassis.config.fan.capacity-insufficient"
+      - "Resource:/SYS"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} has insufficient cooling capacity due to missing/faulted fans.
+
+      Verification (hwdiag fan info):
+      {command_hwdiag_fan_info_selected_lines_code}
+
+      Please install missing fan modules and re-test.
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "hwdiag_fan_info"
+        cmd: "{diag} hwdiag fan info"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: " - "
+        line_only: false
+
+#################################################################################################################################################
+
+- id: pretest_power_on_or_hostnic_fw_blocked_by_fan_capacity_insufficient
+  name: "PRETEST power-on blocked by fan capacity insufficient – auto SLT + close"
+  description: >
+    For EVE Fremont servers failing PRETEST power-on related steps
+    (e.g., 7_POWER_ON, 8_UPDATE_HOSTNIC_FW_REMOTE) where ILOM reports
+    insufficient cooling capacity due to missing/faulted fans.
+    Post verification (hwdiag fan info) and close the ticket after triggering SLT.
+  priority: 14
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    # Make it stable: anchor on the actual Open Problems text
+    ilom_open_problems_raw:
+      contains: "Insufficient cooling capacity"
+  patterns:
+    - type: contains
+      value: "fault.chassis.config.fan.capacity-insufficient"
+    - type: contains
+      value: "Insufficient cooling capacity"
+    - type: contains
+      value: "missing fans"
+    # PRETEST symptoms (any one of these is enough)
+    - type: contains
+      value: "7_POWER_ON"
+    - type: contains
+      value: "UPDATE_HOSTNIC_FW_REMOTE"
+    - type: contains
+      value: "System faults or hardware configuration prevents power on"
+  action:
+    # IMPORTANT: change this type to whatever your RackBrain uses to trigger SLT
+    # Examples some teams use: "start_slt", "rerun_slt", "trigger_slt"
+    type: "start_slt"
+    close: true
+
+    ilom_filter_contains:
+      - "Insufficient cooling capacity"
+      - "fan"
+      - "fault.chassis.config.fan.capacity-insufficient"
+      - "Resource:/SYS"
+
+    comment_template: |
+
+      Repair,
+
+      Server {sn} cannot power on during PRETEST because ILOM reports:
+      Insufficient cooling capacity due to missing/faulted fans
+      (fault.chassis.config.fan.capacity-insufficient).
+
+      Verification (hwdiag fan info):
+      {command_hwdiag_fan_info_selected_lines_code}
+
+      Action:
+      - SLT has been started automatically after rule match.
+      - Ticket is being closed by automation.
+
+      Please install missing fan modules / replace faulted fan modules and re-test.
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "hwdiag_fan_info"
+        cmd: "{diag} hwdiag fan info"
+        expect_status: 0
+        stop_on_decision: false
+        # capture both FM and PS lines with your current RackBrain limitation
+        line_contains: " - "
+        line_only: false
+
+
+- id: ilom_fault_ac_power_lost_broad
+  name: "AC power lost / power redundancy lost (ILOM fault broad)"
+  description: >
+    Broad catcher for ILOM power faults that indicate AC input loss or PSU
+    redundancy lost. Typical classes include alert.chassis.power.ext-fail and
+    alert.chassis.power.redundancy-lost. Usually triggered by 9_CHECK_ILOM_FAULT.
+
+  priority: 20
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+    failure_message:
+      any_contains:
+        - "alert.chassis.power.ext-fail"
+        - "alert.chassis.power.redundancy-lost"
+        - "loss of AC input power"
+        - "not providing redundant availability"
+
+  patterns:
+    - type: contains
+      value: "alert.chassis.power.ext-fail"
+    - type: contains
+      value: "alert.chassis.power.redundancy-lost"
+    - type: contains
+      value: "loss of AC input power"
+    - type: contains
+      value: "not providing redundant availability"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "AC input"
+      - "redundant"
+      - "redundancy"
+      - "Power Supply"
+      - "PS0"
+      - "PS1"
+      - "PS3"
+      - "PS4"
+      
+
+    comment_template: |
+      Test, please send this server to repair / power check
+    
+      Repair,
+    
+      Server {sn} hit a power fault indicating AC input loss and/or PSU redundancy lost.
+    
+      Please verify:
+      - Reseat BOTH PSU AC cords (PDU side + PSU side)
+      - Check PDU outlet / breaker
+      - Check PSU LEDs
+      - Reseat PSU; if persists, swap PSU with known-good PSU
+    
+      ILOM Open Problems (from RackBrain context):
+      {ilom_open_problems_code}
+
+
+  command_steps:
+    - id: "fmadm_faulty"
+      cmd: "{faultmgmt} fmadm faulty -a"
+      expect_status: 0
+      stop_on_decision: false
+      line_any_contains:
+        - "alert.chassis.power"
+        - "AC input"
+        - "redundant"
+        - "redundancy"
+        - "Power"
+      line_only: true
+
+        
+#############################################################################################
+- id: check_iou_fru_check_result_fail_or_missing
+  name: "IOU FRU check result FAIL/MISSING – include position block"
+  description: >
+    Trigger when IOU FRU / IOU device mapping check fails or missing
+    (e.g., CHECK_IOU_FRU or 3_COLLECT_DEVICES_XML) and ticket includes
+    Check Result: FAIL or MISSING (from EVE BOT text).
+  priority: 15
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+  combined_text:
+    regex: "(?s)(/SYS/IOU\\d+/SSD\\d+).*Check Result:\\s*(FAIL|MISSING)"
+
+  patterns:
+    - type: contains
+      value: "This ticket generated by EVE BOT"
+    - type: regex
+      value: "Check Result:\\s*(FAIL|MISSING)"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    text_extracts:
+      - name: "iou_fru_block"
+        source: "ticket.description"
+        between_start_contains: "Position based on base_record:"
+        between_end_contains: "GUTI:"
+        default: "(IOU FRU block not found)"
+
+      - name: "iou_device_block"
+        source: "ticket.description"
+        between_start_contains: "Failure Message:"
+        between_end_contains: "GUTI:"
+        default: ""
+
+    comment_template: |
+      Test,
+      please send to repair, thanks
+
+      Repair,
+      IOU FRU check detected (FAIL/MISSING)
+      - Please verify IOU FRU base_record vs SFCS mapping (see "Position based on base_record" + "Position From SFCS").
+      - Reseat/replace the reported IOU module(s) if mismatch persists.
+
+      Position context (from ticket):
+      {iou_fru_block}{iou_device_block}
+
+
+   
+        
+

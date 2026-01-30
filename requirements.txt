@@ -1,14 +1,21 @@
 # RackBrain Dependencies
-# Python 3.6+ compatible
+# Python 3.6 - 3.9 compatible (matches the precheck runtime environment)
 
 # Core dependencies
 dataclasses>=0.8; python_version < "3.7"
-PyYAML>=6.0.1,<7.0
-requests>=2.25.1,<3.0
-pymysql>=1.0.2,<2.0
-urllib3>=1.26.0,<2.0
+PyYAML==5.3.1
+requests==2.27.1
+PyMySQL==0.10.1
+urllib3==1.26.20
 
-# Optional: For future enhancements
-# rapidocr-onnxruntime>=1.3.0  # Only if OCR features are needed
-
-
+# Precheck (OCR) integration dependencies (pinned to known-working versions)
+Pillow==8.4.0
+numpy==1.19.5
+rapidocr-onnxruntime==1.2.0
+onnxruntime==1.8.1
+opencv-python==4.6.0.66
+Shapely==1.8.5.post1
+pyclipper==1.3.0.post6
+protobuf==3.19.6
+flatbuffers==25.9.23
+six==1.17.0

@@ -100,4 +100,66 @@
 
            sample ILOM output:
            {command_ilom_show_host_stdout_code}
+           
+
+
+#############################################################################################
+- id: ilom_unreachable_pretest_initial
+  name: "PRETEST: Failed to connect ILOM console – show /SP/network + eve_ip (initial)"
+  description: >
+    For EVE Fremont tickets failing in PRETEST with 'Failed to connect ILOM console.'.
+    Run eve_ip then attempt '{ilom} show /SP/network'. If still failing, instruct Test
+    to check mgmt path / reseat ROT cabling and reassign back.
+
+  priority: 20
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      contains: "PRETEST"
+    jira_comments_text:
+      not_contains: "(Marker) ILOM unreachable in PRETEST"
+
+  patterns:
+    - type: contains
+      value: "Failed to connect ILOM console."
+
+  action:
+    type: "comment_only"
+    close: false
+    command_steps:
+      - id: "eve_ip"
+        cmd: "{local} python3 /home/tester/WesleyH/eve_ip.pyc {sn}"
+        stop_on_decision: false
+      - id: "ilom_show_host"
+        cmd: "{ilom} show /SP/network"
+        expect_status: 0
+        stop_on_decision: true
+        on_expect_fail_comment: |
+          Test, 
+          ILOM unreachable in PRETEST. Please check 1G cable and use eve_ip to verify.
+          IF ILOM is back online please rerun PRETEST
+          IF ILOM still down, please move to other location.
+          IF ILOM still down then reassign back for desposition
+
+          {command_eve_ip_stdout_code}
+
+          Attempted ILOM check:
+          {command_ilom_show_host_stdout_code}
+        on_expect_pass_comment: |
+          Test, PRETEST reported ILOM unreachable, but I can connect now.
+          Please retest.
+
+          (Marker) ILOM unreachable in PRETEST
+
+          {command_eve_ip_stdout_code}
+
+          sample ILOM output:
+          {command_ilom_show_host_stdout_code}
+
+
 

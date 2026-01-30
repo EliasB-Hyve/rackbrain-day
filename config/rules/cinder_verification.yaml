@@ -8,7 +8,7 @@
       contains: "Woody (Outpost)"
   patterns:
     - type: contains
-      value: "Outpost Refurb - Cinder Verification"
+      value: "Cinder Verification"
   action:
     type: comment_only
     assign_to: ""  # override global processing.assign_to (no intermediate assignment)

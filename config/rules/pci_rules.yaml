@@ -341,7 +341,7 @@
     - type: contains
       value: "Check Result: FAIL"
     - type: contains
-      value: "12_CHECK_PCIE_LINK_SPEED_WIDTH"
+      value: "CHECK_PCIE_LINK_SPEED_WIDTH"
     - type: not_contains
       value: "The number of Drive on the UUT is inconsistent with the number on SFCS"
     - type: not_contains
@@ -477,6 +477,8 @@
   priority: 80
   allow_on_same_failure: true
   scope:
+    poll_context:
+    contains: "approval_ack_old_tickets"
     arch: "EVE"
     jira_location:
       contains: "Fremont"
@@ -484,6 +486,7 @@
       contains: "EVE"
     failure_message:
       contains: "hwdiag cpld vr_check all"
+    
   patterns:
     - type: contains
       value: "2_HWDIAG_ON"
@@ -508,10 +511,261 @@
         expect_status: 0
         stop_on_decision: false
   
-        # ???????????(??????? sshpass/ILOM banner)
         line_contains: "Voltage Regulator Check Result"
         line_before: 120
         line_after: 20
         line_only: false
+
+
+#==========================================================================================================================================================
+- id: eve_rot_cable_hostnic_check_send_repair
+  name: "EVE ROT cable / HostNIC assert – send to repair"
+  description: >
+    For EVE tickets failing 6_CHECK_ROT_CABLE with HostNIC VID:DID check result FAIL.
+    Send to repair to debug ROT WIPE cable and HostNIC cabling / connection.
+  priority: 20
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+
+    # Adjust this key name to your actual field if needed:
+    db_latest_failed_testcase:
+      contains: "CHECK_ROT_CABLE"
+
+    failure_message:
+      contains: "VID:DID:SSVID:SSDID"
+    combined_text:
+      contains: "HOSTNIC"
+
+  patterns:
+    - type: contains
+      value: "CHECK_ROT_CABLE"
+    - type: contains
+      value: "VID:DID:SSVID:SSDID"
+    - type: contains
+      value: "HOSTNIC"
+    - type: contains
+      value: "Check Result: FAIL"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    comment_template: |
+
+      Test, please send this server to repair.
+
+      Repair,
+
+      Server {sn} failed testcase 6_CHECK_ROT_CABLE.
+      Failure indicates HostNIC VID/DID SSVID/SSDID check failed after assert.
+
+      Please debug ROT WIPE cable and HostNIC:
+      - Reseat ROT WIPE cable (both ends) and verify connection
+      - Reseat HostNIC / related PCIe data cables and verify connector mapping
+      - Re-run 6_CHECK_ROT_CABLE after reseat
+
+      Please refer to ticket failure message and SSH logs for details.
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+
+    # No extra command needed for this case (Open Problems already empty in sample)
+    command_steps: []
+
+#==========================================================================================================================================================
+- id: eve_rot_smartnic_boot_fwid_not_found
+  name: "EVE ROT SMARTNIC boot fwid missing – send to repair"
+  description: >
+    For EVE servers where failure message shows
+    'Boot fwid 2' not found in readSerial output.
+    Send to repair for ROT to SMARTNIC debugging.
+  priority: 20
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+
+    failure_message:
+      contains: "Boot fwid 2"
+
+  patterns:
+    - type: contains
+      value: "'Boot fwid 2' not found in readSerial output"
+    - type: contains
+      value: "readSerial"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    comment_template: |
+
+      Test, please send this server to repair.
+
+      Repair,
+
+      Server {sn} failed ROT firmware verification.
+      Failure indicates missing SMARTNIC Boot FWID in readSerial output.
+
+      Please help to debug ROT to SMARTNIC:
+      - Reseat: WIPE → ROT → CON → IOU Power → SMARTNIC
+      - Replace (good parts): WIPE → ROT → CON → IOU Power → SMARTNIC → Riser → ROT/FIM
+
+
+      Please refer to ticket failure message and logs for details.
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+    command_steps: []
+    
+#==========================================================================================================================================================    
+- id: fault_cpu_intel_ultrapath_link_width_degraded_general
+  name: "fault.cpu.intel.ultrapath.link_width_degraded – ILOM general"
+  description: >
+    For EVE Fremont servers where ILOM / fmadm faulty -a reports
+    fault.cpu.intel.ultrapath.link_width_degraded (UPI link width degraded),
+    regardless of test flow. Used for all ILOM-related failures.
+  priority: 18
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+    # Primary trigger: ILOM / fmadm content
+    ilom_open_problems_raw:
+      contains: "Ultrapath"
+  patterns:
+    - type: contains
+      value: "fault.cpu.intel.ultrapath.link_width_degraded"
+    - type: contains
+      value: "Ultrapath Interconnect"
+    - type: contains
+      value: "UPI"
+    - type: contains
+      value: "degraded width"
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "Ultrapath"
+      - "UPI"
+      - "degraded"
+      - "Resource:/SYS/MB"
+      - "Resource:/SYS/MB/P0"
+      - "Resource:/SYS/MB/P1"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} shows UPI interconnect link width degradation
+      (fault.cpu.intel.ultrapath.link_width_degraded).
+
+      This indicates reduced CPU-to-CPU interconnect lanes.
+
+      Please perform standard UPI rework:
+      1) please reseat CPU0 and CPU1.
+      2) Inspect sockets for bent pins / contamination.
+      3) Reinstall heatsinks with even pressure.
+      4) Swap CPUs with known-good units if needed.
+      5) If fault remains on /SYS/MB, consider MB replace.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+
+################################################################
+- id: fault_cpu_amd_xgmi_link_ce_general
+  name: "fault.cpu.amd.xgmi.link_ce – ILOM general"
+  description: >
+    For EVE Fremont servers where ILOM Open_Problems reports AMD xGMI link corrected errors
+    (fault.cpu.amd.xgmi.link_ce or fault.ops.cpu.amd.xgmi.link_ce), regardless of testcase.
+    In that case, run "fmadm faulty -a" and show the lines containing "Affects".
+  priority: 18
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    ilom_open_problems_raw:
+      contains: "xgmi"
+  patterns:
+    - type: contains
+      value: "fault.cpu.amd.xgmi.link_ce"
+    - type: contains
+      value: "fault.ops.cpu.amd.xgmi.link_ce"
+    - type: contains
+      value: "xgmi"
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "fault.cpu.amd.xgmi.link_ce"
+      - "fault.ops.cpu.amd.xgmi.link_ce"
+      - "Resource:/SYS/MB"
+      - "Resource:/SYS/MB/P0"
+      - "Resource:/SYS/MB/P1"
+
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} shows AMD xGMI link corrected error(s):
+      - fault.cpu.amd.xgmi.link_ce / fault.ops.cpu.amd.xgmi.link_ce
+
+      Please perform standard xGMI/CPU interconnect rework:
+      1) Power off and reseat CPU0/CPU1.
+      2) Inspect sockets for bent pins / contamination.
+      3) Reinstall heatsinks with even pressure.
+      4) If issue persists, swap CPU(s) with known-good to isolate CPU vs motherboard.
+      5) If fault remains affecting /SYS/MB, replace motherboard/tray per repair SOP.
+
+      fmadm faulty -a (Affects lines):
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
 
 

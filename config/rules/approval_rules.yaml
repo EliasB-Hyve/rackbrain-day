@@ -13,42 +13,55 @@
 - id: approval_request_ack
   name: "Approval request acknowledgement"
   description: >
-    When the latest Jira comment includes 'Requesting'
+    When the latest Jira comment includes 'Requesting approval'
     and the commenter is on the approved list, post an acknowledgement comment.
   allow_high_slt_attempts: true
-  # Make this higher than normal triage rules so it wins when present.
   priority: 100
 
   scope:
-    # Requires the new ErrorEvent field populated from Jira comments.
     jira_latest_comment_text:
-      contains: "Requesting approval"
+      regex: "(?i)(request(ing)? approval|need approval|approval.*doa|doa.*approval|need te review|please review)"
 
-    # Match the latest comment author identifier.
-    # Jira Server/DC usually provides author.name; Cloud provides accountId.
-    # Put the exact identifiers you see in issue JSON here.
+
     jira_latest_comment_author:
-      - "byron.delaney@hyvesolutions.com"
-      - "shaun.millerii@hyvesolutions.com"
-      - "david.nguyen2@hyvesolutions.com"
-      - "ethan.aboumrad@hyvesolutions.com"
-      - "elias.bakhtani@hyvesolutions.com"
+      - "jonathan.gaitantrigueros@hyvesolutions.com"
+      - "Kao.Saeteurn@hyvesolutions.com"
+      - "michelle.hernandez2@hyvesolutions.com"
+      - "colin.steele@hyvesolutions.com"
+      - "Osbaldo.Ramirez@hyvesolutions.com"
+      - "HuuT@hyvesolutions.com"
+      - "ducleminh.nguyen@hyvesolutions.com"
+      - "Eric.Van@hyvesolutions.com"
+      - "jasmeet.singh2@hyvesolutions.com"
+      - "yinyin.phyo@hyvesolutions.com"
+      - "tommy.nguyen@hyvesolutions.com"
+      - "thaih@hyvesolutions.com"
+      - "SumeerB@hyvesolutions.com"
+      - "JohnyS@hyvesolutions.com"
+      - "htetaung.shinn@hyvesolutions.com"
+      - "Phat.Dao@hyvesolutions.com"
+      - "bao.pham@hyvesolutions.com"
+      - "khoat@hyvesolutions.com"
+      - "trung.nguyen@hyvesolutions.com"
+      - "igor.zhidilev@hyvesolutions.com"
+      - "MarilouD@hyvesolutions.com"
+      - "Ravinder.Singh@hyvesolutions.com"
+      - "SteveCh@hyvesolutions.com"
+      - "Manuel.Collado@hyvesolutions.com"
 
-
-
+    # Prevent duplicate ack on the same ticket
     jira_comments_text:
-      not_contains: "Approved. Proceed."
+      not_contains: "RB:approval_request_ack:v1"
 
-  # Patterns are still evaluated against summary+description (combined_text),
-  # so use an always-true pattern and rely on scope gating.
   patterns:
     - type: regex
       value: ".*"
 
   action:
-    
-    reassign_to: "{jira_latest_comment_author}"
     type: "comment_only"
+    reassign_to: "{jira_latest_comment_author}"
     comment_template: |
       Approved. Proceed.
+      [[RB:approval_request_ack:v1]]
+
 

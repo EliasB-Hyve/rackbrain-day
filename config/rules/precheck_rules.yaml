@@ -1,0 +1,23 @@
+- id: precheck_auto_pass_close
+  name: "Precheck: auto Pass + close"
+  description: >
+    For PRECHECK / PRE-RLT tickets, detect the precheck phrase (description/comments/OCR),
+    comment "Pass", transition to Closed, and reassign back to the reporter.
+  priority: 100
+
+  scope:
+    jira_status: "Open"
+    precheck_marker_found: true
+    precheck_phrase_found: true
+    precheck_latest_comment_is_pass: false
+
+  patterns:
+    - type: regex
+      value: "\\bpre\\s*-?\\s*(?:rlt|check)\\b|\\bprecheck\\b|\\bprerlt\\b"
+      source: ticket.summary
+
+  action:
+    comment_template: "Pass"
+    transition_to: "Closed"
+    transition_comment_mode: "during_transition"
+    reassign_to: "{jira_reporter}"

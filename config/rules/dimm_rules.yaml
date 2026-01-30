@@ -114,13 +114,12 @@
         line_only: true
 #==========================================================================================================================================================
 - id: fault_ops_memory_amd_dimm_ce_non_pretest
-  name: "fault.ops.memory.amd.dimm_ce â€“ non-Pretest flow"
+  name: "fault.ops.memory DIMM CE (dimm_ce|dimm_excessive_ce) - non-Pretest flow"
   description: >
-    For EVE servers where the latest failing DB testset is NOT Pretest,
-    and both the failure message and ILOM Open_Problems show
-    fault.ops.memory.amd.dimm_ce. In that case, run "fmadm faulty -a"
-    and show the lines containing "Affects".
+    For EVE servers where latest failed DB testset is NOT Pretest, and CE-related
+    DIMM faults are present (dimm_ce or dimm_excessive_ce), comment to send to repair.
   priority: 20
+
   scope:
     arch: "EVE"
     jira_location:
@@ -129,42 +128,60 @@
       contains: "EVE"
     db_latest_failed_testset:
       not_contains: "PRETEST"
+
     failure_message:
-      contains: "fault.ops.memory.amd.dimm_ce"
-    ilom_open_problems_raw:
-      contains: "fault.ops.memory.amd.dimm_ce"
+      contains: "fault.ops.memory"
+
   patterns:
-    - type: contains
-      value: "fault.ops.memory.amd.dimm_ce"
+    - type: regex
+      value: "(dimm_excessive_ce|dimm_ce)"
+
   action:
     type: "comment_only"
     close: false
+
     ilom_filter_contains:
-      - "fault.ops.memory.amd.dimm_ce"
+      - "fault.ops.memory"
+      - "dimm_ce"
+      - "dimm_excessive_ce"
+      - "P0/D"
 
     comment_template: |
-
-      Test, please send this server to repair
-      
+      Test, please send this server to repair.
+    
       Repair,
-
-      Server {sn} failed for a memory CE fault (fault.ops.memory.amd.dimm_ce).
-
-      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
-
-      fmadm faulty -a details:
-      {command_fmadm_faulty_selected_lines_code}
-
-      ILOM Open Problems :
+    
+      Server {sn} failed due to a DIMM Correctable Error (CE) memory fault.
+    
+      Please reinstall the affected DIMM(s). If the error remains, swap with known-good DIMM(s)
+      to verify whether the issue follows the DIMM or stays in the same motherboard slot.
+    
+      Ticket: {ticket_key}
+      Testcase: {testcase}
+      Failed testset: {db_latest_failed_testset}
+    
+      Fault detail (from ticket):
+      {{code}}
+      {error_details}
+      {{code}}
+    
+      ILOM Open Problems (filtered):
       {ilom_open_problems_code}
 
-    command_steps:
-      - id: "fmadm_faulty"
-        cmd: "{faultmgmt} fmadm faulty -a"
-        expect_status: 0
-        stop_on_decision: false
-        line_contains: "Affects"
-        line_only: true
+  command_steps:
+    - id: "fmadm_faulty"
+      cmd: "{faultmgmt} fmadm faulty -a"
+      expect_status: 0
+      stop_on_decision: false
+      # 比只抓 Affects 更穩：同時抓 Problem class/Affects/FRU
+      line_any_contains:
+        - "Problem class"
+        - "Affects"
+        - "FRU"
+        - "Location"
+        - "Serial_Number"
+      line_only: true
+
 #==========================================================================================================================================================
 - id: mrc_dimm_training_non_pretest
   name: "MRC DIMM training failure â€“ non-Pretest flow"
@@ -457,17 +474,22 @@
     failure_message_line_before: 0
     failure_message_line_after: 1
     comment_template: |
-
       This server has an Advanced Boot Loader (ABL) fatal error on SLT.
       
-      Test, please send this server to repair
-
-      Repair,
       
-      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+      #      Test, please send this server to repair
+      #      Repair,
+      #      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+
+
+      Test, please send this server to FA to review.
+
+      FA,
+      Please review DIMM ABL issue.
 
       fmadm faulty -a details:
       {command_fmadm_faulty_selected_lines_code}
+
 
       ILOM Open Problems :
       {ilom_open_problems_code}
@@ -484,13 +506,12 @@
 
 
 - id: fault_memory_arm_training_non_pretest
-  name: "fault.memory.arm.training â€“ non-Pretest flow"
+  name: "fault.memory.arm.training – non-Pretest flow"
   description: >
-    For EVE servers where the latest failing DB testset is NOT Pretest,
-    and both the failure message and ILOM Open_Problems show
-    fault.memory.arm.training. In that case, run "fmadm faulty -a" and
-    show the lines containing "Affects".
+    Broad catcher for fault.memory.arm.training (non-PRETEST preferred). Uses
+    ticket error_details to avoid relying on command_steps placeholders.
   priority: 20
+
   scope:
     arch: "EVE"
     jira_location:
@@ -501,41 +522,37 @@
       not_contains: "PRETEST"
     failure_message:
       contains: "fault.memory.arm.training"
-    ilom_open_problems_raw:
-      contains: "fault.memory.arm.training"
+
   patterns:
     - type: contains
       value: "fault.memory.arm.training"
+    - type: contains
+      value: "Problem class: fault.memory.arm.training"
+    - type: contains
+      value: "memory training"
+    - type: contains
+      value: "CHECK_ILOM_FAULT"
+
   action:
     type: "comment_only"
     close: false
     ilom_filter_contains:
-      - "fault.memory.arm.training"
+      - "fault.memory"
+      - "memory"
+      - "training"
 
     comment_template: |
+      Test, 
+      please send this server to repair
 
-      Test, please send this server to repair
-      
       Repair,
+      Server {sn} failed for a memory(CPU) training fault (fault.memory.arm.training).
 
-      Server {sn} failed for a memory training fault (fault.memory.arm.training).
+      Please reseat/reinstall DIMM(s)/CPU. If the error remains, swap with known-good DIMM(s)/CPU
+      to check whether the issue follows the DIMM or stays with the motherboard slot.
 
-      Please reinstall DIMM(s). If the error remains, please swap with good DIMM(s)
-      to check if the error remains in the motherboard slot or follows the swap.
-
-      fmadm faulty -a details:
-      {command_fmadm_faulty_selected_lines_code}
-
-      ILOM Open Problems :
+      ILOM Open Problems:
       {ilom_open_problems_code}
-
-    command_steps:
-      - id: "fmadm_faulty"
-        cmd: "{faultmgmt} fmadm faulty -a"
-        expect_status: 0
-        stop_on_decision: false
-        line_contains: "Affects"
-        line_only: true
         
         
 - id: eve_dimm_training_failure_pretest_start_slt_and_close
@@ -582,6 +599,71 @@
     
       ILOM Open Problems:
       {ilom_open_problems_code}
+      
+      
+################################################################################################################
+- id: fault_mrc_population_invalid_non_pretest
+  name: "fault.mrc.population.invalid – non-Pretest flow"
+  description: >
+    For EVE servers where the latest failing DB testset is NOT Pretest,
+    and ILOM Open_Problems shows MRC DIMM population rule violation.
+    In that case, run "fmadm faulty -a" and show the lines containing "Affects".
+  priority: 20
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
+    ilom_open_problems_raw:
+      contains: "Memory Reference Code"
+  patterns:
+    - type: contains
+      value: "Memory Reference Code (MRC)"
+    - type: contains
+      value: "memory DIMM population rules"
+    - type: contains
+      value: "violation"
+  action:
+    type: "comment_only"
+    close: false
+    ilom_filter_contains:
+      - "Memory Reference Code"
+      - "population"
+      - "DIMM"
+      - "Resource:/SYS/MB/"
+    comment_template: |
+
+      Test, please send this server to repair
+      
+      Repair,
+
+      Server {sn} shows memory population rule violation detected by MRC.
+
+      Please verify DIMM population follows platform rules per CPU/channel.
+      Reinstall/seat impacted DIMM(s) first.
+      If the error remains, swap with known-good DIMM(s) to check whether the fault
+      follows the DIMM or remains with the motherboard slot/channel.
+
+      fmadm faulty -a details:
+      {command_fmadm_faulty_selected_lines_code}
+
+      ILOM Open Problems :
+      {ilom_open_problems_code}
+
+    command_steps:
+      - id: "fmadm_faulty"
+        cmd: "{faultmgmt} fmadm faulty -a"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Affects"
+        line_only: true
+
+      
+      
+      
 
         
         
