@@ -107,6 +107,12 @@ class ErrorEvent:
     jira_latest_comment_author: Optional[str] = None
     jira_latest_comment_author_display_name: Optional[str] = None
     jira_latest_comment_author_email: Optional[str] = None
+    
+    # Optional: precheck integration fields
+    precheck_marker_found: bool = False
+    precheck_phrase_found: bool = False
+    precheck_phrase_source: Optional[str] = None
+    precheck_latest_comment_is_pass: bool = False
 
     # Internal timers (local state, not Jira):
     # Rule ids whose timers have expired for this ticket under the current rearm_key.

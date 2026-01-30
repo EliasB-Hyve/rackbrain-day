@@ -200,3 +200,41 @@ def pattern_matches_text(pattern: RulePattern, text: str) -> bool:
 
     # Unknown pattern type: treat as no match
     return False
+    
+    
+def extract_between_contains(
+    text: str,
+    start_contains: str,
+    end_contains: str,
+    *,
+    max_chars: int = 0,
+) -> str:
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    start_idx = None
+    end_idx = None
+
+    s = (start_contains or "").lower()
+    e = (end_contains or "").lower()
+
+    for i, line in enumerate(lines):
+        if start_idx is None and s and s in line.lower():
+            start_idx = i
+            continue
+        if start_idx is not None and e and e in line.lower():
+            end_idx = i
+            break
+
+    if start_idx is None:
+        return ""
+
+    if end_idx is None:
+        end_idx = len(lines)
+
+    block = "\n".join(lines[start_idx:end_idx]).strip()
+    if max_chars and len(block) > max_chars:
+        block = block[:max_chars].rstrip() + "\n...[truncated]"
+    return block
+

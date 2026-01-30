@@ -81,6 +81,18 @@ class JiraClient:
         )
         self._raise_for_status(resp, context=f"add_comment({key})")
 
+    def download_url_bytes(self, url: str) -> bytes:
+        """
+        Download raw bytes from a Jira-protected URL (e.g., attachment 'content' URL).
+        """
+        resp = self.session.get(
+            self._url(str(url)),
+            stream=True,
+            timeout=self.timeout_seconds,
+        )
+        self._raise_for_status(resp, context="download_url_bytes")
+        return resp.content
+
     def get_issue_comments(
         self,
         key: str,

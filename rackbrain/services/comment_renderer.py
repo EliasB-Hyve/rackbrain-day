@@ -138,6 +138,10 @@ def _apply_text_extracts(error_event, action) -> Dict[str, str]:
     extracts = getattr(action, "text_extracts", None) or []
     out: Dict[str, str] = {}
 
+    # NEW: allow dict style: { var_name: {spec...}, ... }
+    if isinstance(extracts, dict):
+        extracts = [{"name": k, **(v or {})} for k, v in extracts.items()]
+
     for spec in extracts:
         if not isinstance(spec, dict):
             continue
@@ -338,6 +342,14 @@ def build_comment_body(rule_match, error_event, template_override: str = None) -
         "testcase": error_event.testcase or "UNKNOWN_TESTCASE",
         "error_details": (error_event.error_details or "").strip(),
         "ilom_components": ilom_components,
+        
+        # Precheck integration fields (optional)
+        "precheck_marker_found": getattr(error_event, "precheck_marker_found", False),
+        "precheck_phrase_found": getattr(error_event, "precheck_phrase_found", False),
+        "precheck_phrase_source": getattr(error_event, "precheck_phrase_source", "") or "",
+        "precheck_latest_comment_is_pass": getattr(
+            error_event, "precheck_latest_comment_is_pass", False
+        ),
 
         "evbot_version": error_event.evbot_version or "",
         "jira_model": error_event.jira_model or "",
@@ -484,3 +496,42 @@ def build_comment_body(rule_match, error_event, template_override: str = None) -
         body = stripped + "\n\n" + signature
 
     return body
+
+
+def _extract_between_contains(
+    text: str,
+    start_contains: str,
+    end_contains: str,
+    *,
+    max_chars: int = 0,
+) -> str:
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    s = (start_contains or "").lower()
+    e = (end_contains or "").lower()
+
+    start_idx = None
+    end_idx = None
+
+    for i, line in enumerate(lines):
+        if start_idx is None and s and s in line.lower():
+            start_idx = i
+            continue
+        if start_idx is not None and e and e in line.lower():
+            end_idx = i
+            break
+
+    if start_idx is None:
+        return ""
+
+    if end_idx is None:
+        end_idx = len(lines)
+
+    block = "\n".join(lines[start_idx:end_idx]).strip()
+
+    if max_chars and len(block) > max_chars:
+        block = block[:max_chars].rstrip() + "\n...[truncated]"
+
+    return block
