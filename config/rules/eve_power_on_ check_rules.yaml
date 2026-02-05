@@ -1,0 +1,325 @@
+- id: eve_pretest_hostnic_down_pxe_once_timer
+  name: "EVE PRETEST: HOSTNIC down + ILOM/ROT up -> PXE once + 10m timer"
+  priority: 120
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    testcase:
+      regex: "^\\*?\\s*(2_POWER_ON|6_UPDATE_HOSTNIC_FW_REMOTE|5_ENABLE_DIMM_MHB)\\s*$"
+
+  patterns:
+    - type: regex
+      value: ".*"
+
+  action:
+    type: comment_only
+    close: false
+
+    command_steps:
+      - id: pxe_once
+        cmd: >-
+          {local} timeout 60s bash -lc '
+          set -euo pipefail;
+      
+          if [ -z "${RAMSES_ILOM_USER:-}" ] || [ -z "${RAMSES_ILOM_PASS:-}" ]; then
+            echo "ERROR: ILOM credential not set";
+            exit 30;
+          fi
+      
+          EVE_IP_PYC="/home/tester/WesleyH/eve_ip.pyc";
+      
+          if ! command -v python3 >/dev/null 2>&1; then exit 11; fi
+          if [ ! -f "$EVE_IP_PYC" ]; then exit 10; fi
+      
+          RAW="$(python3 "$EVE_IP_PYC" {sn} 2>&1 || true)";
+      
+          # Print clean IP status (SN + ILOM/ROT/HOSTNIC lines only)
+          echo "{sn}";
+          echo "$RAW" | awk "
+            /^ILOM[[:space:]]/ ||
+            /^ROT[[:space:]]/  ||
+            /^HOSTNIC[[:space:]]/
+          ";
+      
+          # Parse status for gate
+          ILOM_STATUS="$(echo "$RAW" | awk \"/^ILOM/ {print \\$NF; exit}\")";
+          ROT_STATUS=\"$(echo \"$RAW\" | awk \"/^ROT/ {print \\$NF; exit}\")\";
+          HOSTNIC_STATUS=\"$(echo \"$RAW\" | awk \"/^HOSTNIC/ {print \\$NF; exit}\")\";
+      
+          if [ \"$ILOM_STATUS\" != \"up\" ] ||
+             [ \"$ROT_STATUS\"  != \"up\" ] ||
+             [ \"$HOSTNIC_STATUS\" != \"down\" ]; then
+            echo "PXE_GATE_NOT_MATCH";
+            exit 22;
+          fi
+      
+          # STOP first
+          sshpass -p "$RAMSES_ILOM_PASS" ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "$RAMSES_ILOM_USER@$(echo "$RAW" | awk "/^ILOM/ {print \$3}")" \
+            "stop -script -force /SYS";
+      
+          sleep 5;
+      
+          # START (PXE)
+          sshpass -p "$RAMSES_ILOM_PASS" ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "$RAMSES_ILOM_USER@$(echo "$RAW" | awk "/^ILOM/ {print \$3}")" \
+            "start -script /SYS";
+      
+          echo "PXE_ONCE_SENT";
+          '
+        expect_status: 0
+        expect_contains: "PXE_ONCE_SENT"
+        stop_on_decision: false
+        timer_after_seconds: 600
+
+    comment_template: |
+      **PRETEST Auto-Recovery - PXE Triggered**
+    
+      Ticket: `{ticket_key}`
+      SN: `{sn}`
+    
+      IP Status (before PXE):
+      {command_pxe_once_stdout_code}
+    
+      Action:
+      PXE boot triggered (stop /SYS ? start /SYS).
+    
+      Next Step:
+      System will be rechecked after 10 minutes.
+    
+      ?? Please do NOT reassign before final result.
+    
+      *(Rule: {rule_id}, confidence={confidence})*
+
+
+
+- id: eve_pretest_ilom_or_rot_down_cabling_check
+  name: "EVE PRETEST: ILOM/ROT down -> cabling check"
+  priority: 110
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    testcase:
+      regex: "^\\*?\\s*(2_POWER_ON|6_UPDATE_HOSTNIC_FW_REMOTE|5_ENABLE_DIMM_MHB)\\s*$"
+
+  patterns:
+    - type: regex
+      value: ".*"
+
+  action:
+    type: comment_only
+    close: false
+
+    command_steps:
+      - id: cabling_gate
+        cmd: >-
+          {local} timeout 25s bash -lc '
+          set -euo pipefail;
+
+          EVE_IP_PYC="/home/tester/WesleyH/eve_ip.pyc";
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "ERROR: python3 not found"; exit 11;
+          fi
+          if [ ! -f "$EVE_IP_PYC" ]; then
+            echo "ERROR: eve_ip.pyc not found: $EVE_IP_PYC"; exit 10;
+          fi
+
+          OUT="$(python3 "$EVE_IP_PYC" {sn})";
+
+          echo "===== eve_ip RAW =====";
+          echo "$OUT";
+          echo "======================";
+
+          ILOM_STATUS="$(echo "$OUT" | awk "/^ILOM[[:space:]]/ {print \$NF; exit}")";
+          ROT_STATUS="$(echo "$OUT"  | awk "/^ROT[[:space:]]/  {print \$NF; exit}")";
+
+          echo "ILOM_STATUS=$ILOM_STATUS ROT_STATUS=$ROT_STATUS";
+
+          if [ -z "$ILOM_STATUS" ] || [ -z "$ROT_STATUS" ]; then
+            echo "ERROR: cannot parse eve_ip output";
+            exit 20;
+          fi
+
+          if [ "$ILOM_STATUS" != "up" ] || [ "$ROT_STATUS" != "up" ]; then
+            echo "CABLING_CASE_OK";
+            exit 0;
+          fi
+
+          echo "NOT_CABLING_CASE";
+          exit 22;
+          '
+        expect_status: 0
+        expect_contains: "CABLING_CASE_OK"
+        stop_on_decision: false
+
+    comment_template: |
+      **ILOM/ROT not up ? please check cabling**
+
+      Ticket: `{ticket_key}`
+      SN: `{sn}`
+      Testcase: `{testcase}`
+
+      Result:
+      {command_cabling_gate_stdout_code}
+
+      *(Rule: {rule_id}, confidence={confidence})*
+
+
+- id: eve_pretest_after_pxe_10m_hostnic_up_start_pretest
+  name: "EVE PRETEST: after PXE 10m HOSTNIC up -> start PRETEST"
+  priority: 140
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    timer_expired_for: "eve_pretest_hostnic_down_pxe_once_timer"
+
+  patterns:
+    - type: regex
+      value: ".*"
+
+  action:
+    type: comment_only
+    close: false
+
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+
+    command_steps:
+      - id: hostnic_up_gate
+        cmd: >-
+          {local} timeout 25s bash -lc '
+          set -euo pipefail;
+
+          EVE_IP_PYC="/home/tester/WesleyH/eve_ip.pyc";
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "ERROR: python3 not found"; exit 11;
+          fi
+          if [ ! -f "$EVE_IP_PYC" ]; then
+            echo "ERROR: eve_ip.pyc not found: $EVE_IP_PYC"; exit 10;
+          fi
+
+          OUT="$(python3 "$EVE_IP_PYC" {sn} 2>&1 || true)";
+
+          echo "===== eve_ip RAW =====";
+          echo "$OUT";
+          echo "======================";
+
+          HOSTNIC_STATUS="$(echo "$OUT" | awk "/^HOSTNIC[[:space:]]/ {print \$NF; exit}")";
+          echo "HOSTNIC_STATUS=$HOSTNIC_STATUS";
+
+          if [ -z "$HOSTNIC_STATUS" ]; then
+            echo "ERROR: cannot parse HOSTNIC status";
+            exit 20;
+          fi
+
+          if [ "$HOSTNIC_STATUS" = "up" ]; then
+            echo "HOSTNIC_UP_OK";
+            exit 0;
+          fi
+
+          echo "HOSTNIC_NOT_UP";
+          exit 22;
+          '
+        expect_status: 0
+        expect_contains: "HOSTNIC_UP_OK"
+        stop_on_decision: false
+
+    comment_template: |
+      **PXE wait completed (10 minutes) - HOSTNIC is up ? start PRETEST**
+
+      Ticket: `{ticket_key}`
+      SN: `{sn}`
+
+      Recheck:
+      {command_hostnic_up_gate_stdout_code}
+
+      Starting PRETEST (HTTP {slt_start_status}).
+
+      *(Rule: {rule_id}, confidence={confidence})*
+
+
+- id: eve_pretest_after_pxe_10m_hostnic_down_send_repair
+  name: "EVE PRETEST: after PXE 10m HOSTNIC still down -> send repair"
+  priority: 135
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    timer_expired_for: "eve_pretest_hostnic_down_pxe_once_timer"
+
+  patterns:
+    - type: regex
+      value: ".*"
+
+  action:
+    type: comment_only
+    close: false
+
+    command_steps:
+      - id: hostnic_down_gate
+        cmd: >-
+          {local} timeout 25s bash -lc '
+          set -euo pipefail;
+
+          EVE_IP_PYC="/home/tester/WesleyH/eve_ip.pyc";
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "ERROR: python3 not found"; exit 11;
+          fi
+          if [ ! -f "$EVE_IP_PYC" ]; then
+            echo "ERROR: eve_ip.pyc not found: $EVE_IP_PYC"; exit 10;
+          fi
+
+          OUT="$(python3 "$EVE_IP_PYC" {sn} 2>&1 || true)";
+
+          echo "===== eve_ip RAW =====";
+          echo "$OUT";
+          echo "======================";
+
+          HOSTNIC_STATUS="$(echo "$OUT" | awk "/^HOSTNIC[[:space:]]/ {print \$NF; exit}")";
+          echo "HOSTNIC_STATUS=$HOSTNIC_STATUS";
+
+          if [ -z "$HOSTNIC_STATUS" ]; then
+            echo "ERROR: cannot parse HOSTNIC status";
+            exit 20;
+          fi
+
+          if [ "$HOSTNIC_STATUS" = "down" ]; then
+            echo "HOSTNIC_DOWN_OK";
+            exit 0;
+          fi
+
+          echo "HOSTNIC_NOT_DOWN";
+          exit 22;
+          '
+        expect_status: 0
+        expect_contains: "HOSTNIC_DOWN_OK"
+        stop_on_decision: false
+
+    comment_template: |
+      **PXE wait completed (10 minutes)  HOSTNIC still down ? send repair**
+
+      Ticket: `{ticket_key}`
+      SN: `{sn}`
+
+      Recheck:
+      {command_hostnic_down_gate_stdout_code}
+
+      Decision: **Send repair**.
+
+      *(Rule: {rule_id}, confidence={confidence})*

@@ -1,29 +1,34 @@
-# Workflow rules: PSU AC input loss follow-up
-# These rules are a multi-step back-and-forth flow (comment -> reassigned back -> follow-up comment).
-# Rule YAML reference (for rule authors): config/rules/RULES_YAML_REFERENCE.md
+# -------------------------------------------------
+# PSU AC input loss workflow (Regex Enhanced)
+# -------------------------------------------------
 
+# ========== Step 1: Ask test to reseat PSU ==========
 - id: ilom_fault_psu_ac_loss_reseat_request
   name: "ILOM fault: PSU AC input loss + redundancy lost -> reseat PSU"
-  description: >
-    When the ticket indicates AC input loss to a power supply AND redundancy lost, and ILOM Open Problems
-    confirms the AC input loss, extract the affected power supply and ask test to reseat it, then reassign
-    the ticket back to Elias for re-check.
   priority: 30
+
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+
     ilom_open_problems_raw:
-      contains: "A loss of AC input power to a power supply has been detected."
+      regex: "(?i)a loss of ac input power to a power supply has been detected"
+
     jira_comments_text:
       not_contains: "and its power cable."
+
   patterns:
-    - type: contains
-      value: "A loss of AC input power to a power supply has been detected."
-    - type: contains
-      value: "The power supplies are not providing redundant availability."
+    # AC loss
+    - type: regex
+      value: "(?i)a loss of ac input power to a power supply has been detected"
+
+    # Redundancy lost (all known variants)
+    - type: regex
+      value: "(?i)(loss of redundant power|not providing redundant availability|power supplies.*redundant|redundant availability)"
+
   action:
     type: comment_only
 
@@ -31,7 +36,7 @@
       - name: psu_affected
         source: ilom_open_problems_raw
         between_start_contains: "Power"
-        between_end_contains: "A loss of AC input power to a power supply has been detected."
+        between_end_contains: "A loss of AC input power"
         line_contains: "(Power Supply"
         line_between_start_contains: "("
         line_between_end_contains: ")"
@@ -47,28 +52,32 @@
       {ilom_open_problems_code}
 
 
+# ========== Step 2: Still present -> Send to repair ==========
 - id: ilom_fault_psu_ac_loss_followup_still_present
   name: "ILOM fault PSU AC input loss follow-up (still present) -> send to repair"
-  description: >
-    After PSU reseat request, when the ticket is assigned back to Elias, re-check ILOM Open Problems.
-    If the AC input loss entry is still present, send to repair.
   priority: 35
+
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+
     jira_comments_text:
       contains: "and its power cable."
       not_contains: "AC input power follow-up:"
+
     ilom_open_problems_raw:
-      contains: "A loss of AC input power to a power supply has been detected."
+      regex: "(?i)a loss of ac input power to a power supply has been detected"
+
   patterns:
-    - type: contains
-      value: "A loss of AC input power to a power supply has been detected."
-    - type: contains
-      value: "The power supplies are not providing redundant availability."
+    - type: regex
+      value: "(?i)a loss of ac input power to a power supply has been detected"
+
+    - type: regex
+      value: "(?i)(loss of redundant power|not providing redundant availability|power supplies.*redundant|redundant availability)"
+
   action:
     type: comment_only
 
@@ -90,30 +99,35 @@
       {ilom_open_problems_code}
 
 
+# ========== Step 3A: Cleared + PRETEST ==========
 - id: ilom_fault_psu_ac_loss_followup_cleared_pretest_start_pretest
   name: "ILOM fault PSU AC input loss follow-up cleared (PRETEST) -> start PRETEST"
-  description: >
-    After PSU reseat request, when assigned back to Elias and the AC input loss entry is gone,
-    rerun PRETEST and comment that we started it.
   priority: 40
+
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+
     jira_comments_text:
       contains: "and its power cable."
       not_contains: "AC input power follow-up:"
+
     db_latest_failed_testset:
       contains: "PRETEST"
+
     ilom_open_problems_raw:
-      not_contains: "A loss of AC input power to a power supply has been detected."
+      not_regex: "(?i)a loss of ac input power to a power supply has been detected"
+
   patterns:
-    - type: contains
-      value: "A loss of AC input power to a power supply has been detected."
-    - type: contains
-      value: "The power supplies are not providing redundant availability."
+    - type: regex
+      value: "(?i)a loss of ac input power to a power supply has been detected"
+
+    - type: regex
+      value: "(?i)(loss of redundant power|not providing redundant availability|power supplies.*redundant|redundant availability)"
+
   action:
     type: comment_only
 
@@ -143,30 +157,35 @@
       {ilom_open_problems_code}
 
 
+# ========== Step 3B: Cleared + NOT PRETEST ==========
 - id: ilom_fault_psu_ac_loss_followup_cleared_not_pretest_release_retest
   name: "ILOM fault PSU AC input loss follow-up cleared (NOT PRETEST) -> release for retest"
-  description: >
-    After PSU reseat request, when assigned back to Elias and the AC input loss entry is gone,
-    ask repair to release the server for retest.
   priority: 40
+
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+
     jira_comments_text:
       contains: "and its power cable."
       not_contains: "AC input power follow-up:"
+
     db_latest_failed_testset:
       not_contains: "PRETEST"
+
     ilom_open_problems_raw:
-      not_contains: "A loss of AC input power to a power supply has been detected."
+      not_regex: "(?i)a loss of ac input power to a power supply has been detected"
+
   patterns:
-    - type: contains
-      value: "A loss of AC input power to a power supply has been detected."
-    - type: contains
-      value: "The power supplies are not providing redundant availability."
+    - type: regex
+      value: "(?i)a loss of ac input power to a power supply has been detected"
+
+    - type: regex
+      value: "(?i)(loss of redundant power|not providing redundant availability|power supplies.*redundant|redundant availability)"
+
   action:
     type: comment_only
 
@@ -185,6 +204,5 @@
       Repair,
       Please release the server for retest.
 
-      ILOM Open Problems
+      ILOM Open Problems:
       {ilom_open_problems_code}
-

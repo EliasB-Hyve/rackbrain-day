@@ -54,54 +54,53 @@
           {command_ilom_show_host_stdout_code}
 
 
-- id: ilom_console_failed_show_host_after_reseat
-  name: "Failed to connect ILOM console – show /SP/network + eve_ip (after ROT cabling reseat)"
-  description: >
-    Follow-up for the ILOM console connection failure after ROT cabling reseat:
-    run eve_ip and '{ilom} show /SP/network'. If still failing, send to repair;
-    if passing, ask to release from repair and retest.
-  priority: 20
-  scope:
-    arch: "EVE"
-    jira_location:
-      contains: "Fremont"
-    jira_customer:
-      contains: "EVE"
-    db_latest_failed_testset:
-      not_contains: "PRETEST"
-    jira_comments_text:
-      contains: "reseat the ROT cabling"
-    # failure_message:
-    #   not_contains: "Failed to connect sunservice."
-  patterns:
-    - type: contains
-      value: "*Failure Message:* Failed to connect ILOM console."
-  action:
-    type: "comment_only"
-    close: false
-    command_steps:
-      - id: "eve_ip"
-        cmd: "{local} python3 /home/tester/WesleyH/eve_ip.pyc {sn}"
-        stop_on_decision: false
-      - id: "ilom_show_host"
-        cmd: "{ilom} show /SP/network"
-        expect_status: 0
-        stop_on_decision: true
-        on_expect_fail_comment: |
-          Test, please send server to repair
-          
-          {command_eve_ip_stdout_code}
-
-          I am still not able to connect to ILOM.
-        on_expect_pass_comment: |
-           Please release from repair and retest. After the ROT cabling reseat, I am now able to connect to ILOM
-          
-            {command_eve_ip_stdout_code}
-
-           sample ILOM output:
-           {command_ilom_show_host_stdout_code}
-           
-
+#- id: ilom_console_failed_show_host_after_reseat
+#  name: "Failed to connect ILOM console – show /SP/network + eve_ip (after ROT cabling reseat)"
+#  description: >
+#    Follow-up for the ILOM console connection failure after ROT cabling reseat:
+#    run eve_ip and '{ilom} show /SP/network'. If still failing, send to repair;
+#    if passing, ask to release from repair and retest.
+#  priority: 20
+#  scope:
+#    arch: "EVE"
+#    jira_location:
+#      contains: "Fremont"
+#    jira_customer:
+#      contains: "EVE"
+#    db_latest_failed_testset:
+#      not_contains: "PRETEST"
+#    jira_comments_text:
+#      contains: "reseat the ROT cabling"
+#    # failure_message:
+#    #   not_contains: "Failed to connect sunservice."
+#  patterns:
+#    - type: contains
+#      value: "*Failure Message:* Failed to connect ILOM console."
+#  action:
+#    type: "comment_only"
+#    close: false
+#    command_steps:
+#      - id: "eve_ip"
+#        cmd: "{local} python3 /home/tester/WesleyH/eve_ip.pyc {sn}"
+#        stop_on_decision: false
+#      - id: "ilom_show_host"
+#        cmd: "{ilom} show /SP/network"
+#        expect_status: 0
+#        stop_on_decision: true
+#        on_expect_fail_comment: |
+#          Test, please send server to repair
+#          
+#          {command_eve_ip_stdout_code}
+#
+#          I am still not able to connect to ILOM.
+#        on_expect_pass_comment: |
+#           Please release from repair and retest. After the ROT cabling reseat, I am now able to connect to ILOM
+#         
+#           {command_eve_ip_stdout_code}
+#
+#           sample ILOM output:
+#           {command_ilom_show_host_stdout_code}
+#           
 
 #############################################################################################
 - id: ilom_unreachable_pretest_initial

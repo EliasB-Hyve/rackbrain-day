@@ -479,7 +479,7 @@
 
 
 
-- id: ilom_pci_link_error_affects
+- id: ilom_pci_link_error_affects_v1
   name: "PCI link error – capture fmadm Affects line"
   description: >
     Fremont EVE servers where ILOM reports a PCI link error on a PCI card.

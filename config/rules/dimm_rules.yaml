@@ -76,8 +76,8 @@
       contains: "EVE"
     db_latest_failed_testset:
       not_contains: "PRETEST"
-    failure_message:
-      contains: "The Platform Security Processor"
+#    failure_message:
+#      contains: "The Platform Security Processor"
     ilom_open_problems_raw:
       contains: "The Platform Security Processor"
   patterns:
@@ -91,11 +91,12 @@
 
     comment_template: |
 
-      Test, please send this server to repair
+      
+      Test, please send this server to Repair
       
       Repair,
 
-      Server {sn} failed for a memory fault (PSP DIMM training).
+      Server {sn} failed for a memory fault (PSP  training).
 
       Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
 
@@ -477,15 +478,13 @@
       This server has an Advanced Boot Loader (ABL) fatal error on SLT.
       
       
-      #      Test, please send this server to repair
-      #      Repair,
-      #      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
-
-
-      Test, please send this server to FA to review.
-
-      FA,
-      Please review DIMM ABL issue.
+      Test, please send this server to repair
+      
+      Repair,
+      Please reinstall DIMM(s). If error remains, please swap with good DIMM(s) to check if error remains in MB slot or follows the swap.
+      #Test, please send this server to FA to review.
+      #FA,
+      #Please review DIMM ABL issue.
 
       fmadm faulty -a details:
       {command_fmadm_faulty_selected_lines_code}
@@ -498,7 +497,7 @@
     command_steps:
       - id: "fmadm_faulty"
         cmd: "{faultmgmt} fmadm faulty -a"
-        expect_status: 0
+        expect_status: 
         stop_on_decision: false
         line_contains: "Affects"
         line_only: true

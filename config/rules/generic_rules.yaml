@@ -298,7 +298,7 @@
 #for some reason if the power cabling issue happens in testcase Failed Testcase: 4_CHECK_ILOM_FAULT, there is no error in the diagnostic commands and we have to send the server to repair without direction
 
 
-- id: hwdiag_system_info_failed_after_sp_reset
+- id: hwdiag_system_info_failed_after_sp_reset_pretest
   name: "hwdiag system info failed Ã¢â‚¬â€œ power cabling issue capture"
   description: >
     For EVE servers where SLT reports 'hwdiag system info executed failed after SP reset'.
@@ -671,49 +671,70 @@
 
 
 
-- id: hwdiag_system_info_failed_after_sp_reset_power_cable_miswired
+- id: hwdiag_system_info_failed_after_sp_reset_power_cable_miswired_pretest
   name: "hwdiag system info failed after SP reset + power cable incorrectly attached"
   description: >
     If ticket contains "hwdiag system info executed failed after SP reset" AND
     ILOM Open_Problems contains "A power cable is attached incorrectly", run
-    hwdiag system info and comment only lines containing "indicates error".
+    hwdiag system info and start SLT once (with 1h cooldown).
+
   priority: 35
+
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+
     failure_message:
       contains: "hwdiag system info executed failed after SP reset"
+
     ilom_open_problems_raw:
       contains: "A power cable is attached incorrectly"
+
     db_latest_failed_testset:
       contains: "PRETEST"
+
+    # Prevent permanent duplicate comments
+    jira_comments_text:
+      not_contains: "RB:hwdiag_system_info_failed_after_sp_reset_power_cable_miswired_pretest:v1"
+
   patterns:
     - type: contains
       value: "hwdiag system info executed failed after SP reset"
+
     - type: not_contains
       value: "failed to reset BIOS back to factory defaults."
+
   action:
-    start_slt: true           # triggers validate_and_start_slt()
-    slt_operation: "SLT"      # default, but explicit is nice
-    slt_use_validate: true    # run validate_server then start_test
+    # ✅ 1 hour cooldown
+    timer_after_seconds: 3600
+
+    # ✅ Try to start SLT once
+    start_slt: true
+    slt_operation: "SLT"
+    slt_use_validate: true
+
     type: comment_only
+
+    # ✅ Always leave a comment + marker (pass/fail both covered)
+    comment_template: |
+      Running SLT to generate logs for repair
+
+      repair, please reseat cabling at location(s):
+      {command_hwdiag_system_info_selected_lines_code}
+
+      TestView SLT start details (HTTP {slt_start_status}):
+
+      [[RB:hwdiag_system_info_failed_after_sp_reset_power_cable_miswired_pretest:v1]]
+
     command_steps:
       - id: hwdiag_system_info
         cmd: "{diag} hwdiag system info"
         line_contains: "Potential power cabling issue"
-        expect_contains: "Potential power cabling issue"
-        on_expect_pass_comment: |
-          Running SLT to generate logs for repair
-
-          repair, please reseat cabling at location(s):
-          {command_hwdiag_system_info_selected_lines_code}
-
-          TestView SLT start details (HTTP {slt_start_status}):
-
-    
+        line_only: true
+        stop_on_decision: false
 
 
 
@@ -1746,13 +1767,15 @@
     due to missing/faulted fans (fault.chassis.config.fan.capacity-insufficient).
     This can present as power on failed / prevents power on, even if failed testcase
     is 5_CHECK_DIMM_AMT. Run "fmadm faulty -a" and show lines containing "Affects".
-  priority: 15
+  priority: 20
   scope:
     arch: "EVE"
     jira_location:
       contains: "Fremont"
     jira_customer:
       contains: "EVE"
+    db_latest_failed_testset:
+      not_contains: "PRETEST"
     ilom_open_problems_raw:
       contains: "cooling"
   patterns:
@@ -1796,6 +1819,7 @@
         line_contains: " - "
         line_only: false
 
+
 #################################################################################################################################################
 
 - id: pretest_power_on_or_hostnic_fw_blocked_by_fan_capacity_insufficient
@@ -1832,10 +1856,12 @@
     - type: contains
       value: "System faults or hardware configuration prevents power on"
   action:
-    # IMPORTANT: change this type to whatever your RackBrain uses to trigger SLT
-    # Examples some teams use: "start_slt", "rerun_slt", "trigger_slt"
-    type: "start_slt"
+    type: "comment_only"
     close: true
+  
+    start_slt: true
+    slt_operation: "SLT"         # 或 "PRETEST"（看你要 rerun 哪個）
+    slt_use_validate: true
 
     ilom_filter_contains:
       - "Insufficient cooling capacity"
@@ -2008,5 +2034,83 @@
 
 
    
-        
+- id: pretest_amd_abl_fatal_auto_rerun_and_close
+  name: "PRETEST: AMD ABL fatal (DIMM) -> rerun PRETEST and close"
+  description: >
+    For PRETEST failures caused by AMD ABL fatal on DIMM
+    (fault.cpu.amd.abl.fatal / SPAMD-8002-8Q),
+    automatically rerun PRETEST once and close the ticket.
+
+  priority: 35
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+    # Must be PRETEST
+    db_latest_failed_testset:
+      contains: "PRETEST"
+
+    # Must be ABL fatal
+    failure_message:
+      contains: "fault.cpu.amd.abl.fatal"
+
+    ilom_open_problems_raw:
+      contains: "SPAMD-8002-8Q"
+
+  patterns:
+    - type: contains
+      value: "fault.cpu.amd.abl.fatal"
+    - type: contains
+      value: "SPAMD-8002-8Q"
+    - type: contains
+      value: "ABL"
+
+  action:
+    type: "comment_only"
+
+    # ✅ Close immediately after triggering PRETEST
+    close: true
+
+    # Optional: keep owner clear
+    assign_to: "austin.lin@hyvesolutions.com"
+
+    # ✅ Start PRETEST automatically
+    start_slt: true
+    slt_operation: "PRETEST"
+    slt_use_validate: true
+
+    ilom_filter_contains:
+      - "fault.cpu.amd.abl.fatal"
+      - "SPAMD-8002-8Q"
+      - "Resource:/SYS/MB/P"
+
+    text_extracts:
+      - name: dimm_resource
+        source: ilom_open_problems_raw
+        line_contains: "Resource:/SYS/MB/P"
+        line_between_start_contains: "Resource:"
+        line_between_end_contains: ","
+        take: first
+        default: "/SYS/MB/P?/D?"
+
+    comment_template: |
+
+      Auto close (PRETEST retry policy)
+
+      PRETEST hit AMD ABL fatal on DIMM ({dimm_resource})
+      – `fault.cpu.amd.abl.fatal` (SPAMD-8002-8Q).
+
+      Triggered PRETEST rerun to filter transient boot/ABL glitch.
+
+      PRETEST start (HTTP {slt_start_status}):
+      {slt_start_response_code}
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
 

@@ -20,6 +20,8 @@ rules:
     - "config/rules/approval_rules.yaml"
     - "config/rules/cinder_verification.yaml"
     - "config/rules/precheck_rules.yaml"
+#    - "config/rules/eve_power_on_ check_rules.yaml"
+
 
 processing:
   # Configuration for ticket processing workflow

@@ -258,6 +258,65 @@
 
 
       Please verify this and move the PCIe cable to slot {gi_slot} for IOU{iou_bay}.
+      
+      
+- id: iou_required_pcie_cable_missing_plain_english
+  name: "IOU required PCIe cable missing (plain English)"
+  description: >
+    When ILOM Open_Problems indicates a required PCIe cable is missing (SPENV-8000-VK),
+    extract the IOU number from Resource:/SYS/IOU# and describe the issue in plain English.
+  priority: 20
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+    # Trigger by ILOM Open_Problems fault
+    ilom_open_problems_raw:
+      contains: "SPENV-8000-VK"
+
+  patterns:
+    - type: contains
+      value: "SPENV-8000-VK"
+    - type: contains
+      value: "A required PCIe cable between the motherboard and I/O Unit"
+
+  action:
+    type: comment_only
+    close: false
+
+    text_extracts:
+      - name: iou_resource
+        source: ilom_open_problems_raw
+        line_contains: "Resource:/SYS/IOU"
+        line_between_start_contains: "Resource:"
+        line_between_end_contains: ","
+        take: first
+        default: "/SYS/IOU?"
+
+      - name: iou_num
+        source: ilom_open_problems_raw
+        line_contains: "Resource:/SYS/IOU"
+        line_between_start_contains: "/SYS/IOU"
+        line_between_end_contains: ","
+        take: first
+        default: "?"
+
+    comment_template: |
+
+      Test, please send to repair.
+
+      Repair,
+
+      Power on is blocked because a required PCIe cable is missing for IOU{iou_num} ({iou_resource}).
+      Please check/insert/reseat the required PCIe cable between the motherboard and IOU{iou_num}.
+      After fixing cabling, retry power on and re-run the test.
+      
+
 
 
 - id: ilom_pci_data_link_layer_inactive_affects
@@ -516,8 +575,77 @@
         line_after: 20
         line_only: false
 
+#======================================================================================================================================================
 
-#==========================================================================================================================================================
+- id: eve_hwdiag_on_i2c_test_all_v_nonzero_route_repair
+  name: "EVE HWDIAG_ON: i2c test all -v non-zero (capture failing rows)"
+  priority: 80
+  allow_on_same_failure: true
+
+  scope:
+    poll_context:
+      contains: "approval_ack_old_tickets"
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+    failure_message:
+      contains: "hwdiag i2c test all -v"
+
+  patterns:
+    - type: contains
+      value: "HWDIAG_ON"
+    - type: contains
+      value: "hwdiag i2c test all -v"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    comment_template: |
+      Test, please send to repair
+
+      Repair,
+      HWDIAG_ON failed on `hwdiag i2c test all -v`.
+
+      Failed rows:
+      {command_i2c_fail_access_selected_lines_code}
+      {command_i2c_fail_timeout_selected_lines_code}
+      {command_i2c_fail_error_selected_lines_code}
+
+      Summary:
+      I2C Test Result: FAILED
+
+    command_steps:
+      - id: "i2c_fail_access"
+        cmd: "{diag} hwdiag i2c test all -v || true"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Access failed"
+        line_before: 0
+        line_after: 0
+        line_only: true
+
+      - id: "i2c_fail_timeout"
+        cmd: "{diag} hwdiag i2c test all -v || true"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "Timeout"
+        line_before: 0
+        line_after: 0
+        line_only: true
+
+      - id: "i2c_fail_error"
+        cmd: "{diag} hwdiag i2c test all -v || true"
+        expect_status: 0
+        stop_on_decision: false
+        line_contains: "ERROR"
+        line_before: 0
+        line_after: 0
+        line_only: true
+
+#======================================================================================================================================================
 - id: eve_rot_cable_hostnic_check_send_repair
   name: "EVE ROT cable / HostNIC assert – send to repair"
   description: >
@@ -768,4 +896,67 @@
         line_contains: "Affects"
         line_only: true
 
+###################################################################################################
+
+- id: fault_chassis_power_fail_general
+  name: "fault.chassis.power.fail – ILOM general"
+  description: >
+    For EVE Fremont servers where ILOM Open_Problems reports
+    fault.chassis.power.fail / SPENV-8000-LT (power source failed or unavailable),
+    regardless of test flow. Show primary affected resource and Affects lines.
+  priority: 20
+  allow_on_same_failure: true
+
+  scope:
+    arch: "EVE"
+    jira_location:
+      contains: "Fremont"
+    jira_customer:
+      contains: "EVE"
+
+    # Primary trigger: ILOM / Open Problems content
+    ilom_open_problems_raw:
+      contains: "SPENV-8000-LT"
+
+  patterns:
+    - type: contains
+      value: "fault.chassis.power.fail"
+    - type: contains
+      value: "A power source has failed or is not available"
+
+  action:
+    type: "comment_only"
+    close: false
+
+    ilom_filter_contains:
+      - "fault.chassis.power.fail"
+      - "A power source has failed or is not available"
+
+    text_extracts:
+      - name: first_resource
+        source: ilom_open_problems_raw
+        line_contains: "Resource:"
+        line_between_start_contains: "Resource:"
+        line_between_end_contains: ","
+        take: first
+        default: "/SYS/?"
+
+    comment_template: |
+
+      Test, please send this server to repair
+
+      Repair,
+
+      Server {sn} shows chassis power fault:
+      - fault.chassis.power.fail (SPENV-8000-LT)
+      - A power source has failed or is not available to the server.
+
+      Primary affected resource: {first_resource}
+
+
+      ILOM Open Problems:
+      {ilom_open_problems_code}
+
+      Please check power delivery/cabling for the affected resource first
+      (IOU/PCIe power path, motherboard power path, and PSU/backplane as applicable).
 
